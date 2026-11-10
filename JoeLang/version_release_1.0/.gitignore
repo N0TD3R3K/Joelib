@@ -1,0 +1,9 @@
+# Local dependency installs and Cloudflare development state.
+**/node_modules/
+**/.wrangler/
+
+# Local credentials and macOS Finder metadata.
+**/.dev.vars
+**/.dev.vars.*
+!**/.dev.vars.example
+**/.DS_Store
