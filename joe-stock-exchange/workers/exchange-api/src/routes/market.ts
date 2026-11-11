@@ -105,7 +105,10 @@ export async function handleMarket(request: Request, url: URL, env: Env): Promis
       .first<Record<string, unknown>>();
     if (!row) return null;
     const history = await env.DB.prepare(
-      "SELECT asset_id, price_cents, recorded_at FROM price_points WHERE asset_id = ? ORDER BY recorded_at ASC LIMIT 240",
+      `SELECT asset_id, price_cents, recorded_at FROM (
+         SELECT asset_id, price_cents, recorded_at
+           FROM price_points WHERE asset_id = ? ORDER BY recorded_at DESC LIMIT 240
+       ) ORDER BY recorded_at ASC`,
     ).bind(row.id).all<Record<string, unknown>>();
     return json({
       asset: mapAsset(row),
@@ -122,8 +125,12 @@ export async function handleMarket(request: Request, url: URL, env: Env): Promis
   if (url.pathname === "/v1/market/snapshot") {
     const assets = await listAssets(env);
     const prices = await env.DB.prepare(
-      `SELECT asset_id, price_cents, recorded_at FROM price_points
-        WHERE recorded_at >= datetime('now', '-30 days') ORDER BY recorded_at ASC LIMIT 3000`,
+      `SELECT asset_id, price_cents, recorded_at FROM (
+         SELECT asset_id, price_cents, recorded_at,
+                ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY recorded_at DESC) AS row_number
+           FROM price_points
+          WHERE recorded_at >= datetime('now', '-30 days')
+       ) WHERE row_number <= 240 ORDER BY recorded_at ASC`,
     ).all<Record<string, unknown>>();
     const historyByAsset = new Map<string, PricePoint[]>();
     for (const row of prices.results) {
@@ -141,7 +148,9 @@ export async function handleMarket(request: Request, url: URL, env: Env): Promis
       ]),
     );
     const activeTick = await env.DB.prepare(
-      "SELECT status FROM market_ticks ORDER BY started_at DESC LIMIT 1",
+      `SELECT status FROM market_ticks
+        WHERE status = 'running' AND started_at >= datetime('now', '-10 minutes')
+        ORDER BY started_at DESC LIMIT 1`,
     ).first<{ status: string }>();
     const now = new Date();
     const scheduledStatus = marketTradingStatus(now);

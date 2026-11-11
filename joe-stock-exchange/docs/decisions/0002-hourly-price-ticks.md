@@ -13,11 +13,15 @@ shift the market window.
 Each tick has a unique market-time key. The engine records its ordinary return,
 shared mood, active Joe Wire effects, demand pressure, applied caps, output, and
 engine result. A duplicate invocation returns without applying a second update.
+All listing-price writes, history points, issuance-quote updates, delisting
+releases, and the tick's completion marker commit in one D1 batch. A failed or
+stale-running tick can therefore retry without leaving a partially advanced
+market.
 
 ## Consequences
 
 Trades and news affect the next eligible tick rather than silently moving the
-displayed quote. Trading can be locked around each run, and every member sees
-one official result. The application must explain that the display is a
-scheduled simulation rather than a continuous real-world market.
+displayed quote. Trading is locked for two minutes on each side of the run, and
+every member sees one official result. The application explains that the
+display is a scheduled simulation rather than a continuous real-world market.
 

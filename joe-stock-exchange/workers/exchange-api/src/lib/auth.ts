@@ -11,6 +11,8 @@ export interface SessionUser {
   status: string;
   disposableBalanceCents: number;
   borrowedPrincipalCents: number;
+  financialStatus: "normal" | "bankrupt";
+  financialStatusVersion: number;
   preferences: UserPreferences;
 }
 
@@ -39,7 +41,8 @@ export async function getSessionUser(request: Request, env: Env): Promise<Sessio
   const tokenHash = await hashSessionToken(token, env.SESSION_SECRET);
   const row = await env.DB.prepare(
     `SELECT u.id, u.email, u.username, u.role, u.status,
-            u.disposable_balance_cents, u.borrowed_principal_cents, u.preferences_json
+            u.disposable_balance_cents, u.borrowed_principal_cents, u.financial_status,
+            u.financial_status_version, u.preferences_json
        FROM sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > CURRENT_TIMESTAMP
@@ -60,6 +63,8 @@ export async function getSessionUser(request: Request, env: Env): Promise<Sessio
     status: String(row.status),
     disposableBalanceCents: Number(row.disposable_balance_cents),
     borrowedPrincipalCents: Number(row.borrowed_principal_cents),
+    financialStatus: row.financial_status as SessionUser["financialStatus"],
+    financialStatusVersion: Number(row.financial_status_version),
     preferences,
   };
 }

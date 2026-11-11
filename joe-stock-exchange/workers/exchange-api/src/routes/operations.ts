@@ -1,10 +1,11 @@
-import type { CompanyDetails, Direction, Severity } from "@joese/contracts";
+import type { CompanyDetails, ConsoleLoan, Direction, FinancialStatus, Severity } from "@joese/contracts";
 import { quoteForPrice } from "@joese/market-rules";
 import type { Env } from "../env";
 import { requireAdministrator, requireOperator } from "../lib/auth";
 import { randomToken, sha256 } from "../lib/crypto";
 import { HttpError, json, readJson } from "../lib/http";
 import { createId } from "../lib/ids";
+import { joeBankPolicy, mapJoeBankLoan } from "./joe-bank";
 import { mapAsset, mapComment, mapNews } from "./market";
 
 async function audit(
@@ -31,6 +32,19 @@ async function audit(
 
 function validTicker(value: string): boolean {
   return /^[A-Z][A-Z0-9]{1,7}$/.test(value);
+}
+
+async function operationTransition(
+  env: Env,
+  statements: D1PreparedStatement[],
+  code: string,
+  message: string,
+): Promise<void> {
+  try {
+    await env.DB.batch(statements);
+  } catch {
+    throw new HttpError(409, code, message);
+  }
 }
 
 function validatedCompanyDetails(input: CompanyDetails): CompanyDetails {
@@ -309,10 +323,163 @@ export async function handleOperations(request: Request, url: URL, env: Env): Pr
   if (url.pathname === "/v1/console/members" && request.method === "GET") {
     const rows = await env.DB.prepare(
       `SELECT id, email, username, role, status, disposable_balance_cents,
-              borrowed_principal_cents, verified_at, created_at
+              borrowed_principal_cents, financial_status, financial_status_version,
+              verified_at, created_at
          FROM users ORDER BY created_at DESC LIMIT 500`,
     ).all<Record<string, unknown>>();
     return json(rows.results);
+  }
+
+  const memberFinancialStatusMatch = url.pathname.match(/^\/v1\/console\/members\/([^/]+)\/financial-status$/);
+  if (memberFinancialStatusMatch && request.method === "PATCH") {
+    const body = await readJson<{ financialStatus?: FinancialStatus; reason?: string }>(request);
+    const financialStatus = body.financialStatus;
+    const reason = (body.reason ?? "").trim();
+    if (financialStatus !== "normal" && financialStatus !== "bankrupt") {
+      throw new HttpError(400, "INVALID_FINANCIAL_STATUS", "Choose normal or bankrupt.");
+    }
+    if (reason.length < 10 || reason.length > 1_000) {
+      throw new HttpError(400, "FINANCIAL_STATUS_REASON_REQUIRED", "Record a 10–1,000 character reason for this classification.");
+    }
+    const member = await env.DB.prepare(
+      `SELECT id, email, username, role, financial_status, financial_status_version
+         FROM users WHERE id = ? LIMIT 1`,
+    ).bind(memberFinancialStatusMatch[1]).first<Record<string, unknown>>();
+    if (!member || member.role !== "member") {
+      throw new HttpError(404, "MEMBER_NOT_FOUND", "That member account was not found.");
+    }
+    if (member.financial_status === financialStatus) {
+      return json({ id: String(member.id), financialStatus, unchanged: true });
+    }
+    const version = Number(member.financial_status_version);
+    await operationTransition(env, [
+      env.DB.prepare(
+        `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+         VALUES ('financial_status', ?, ?, ?, ?)`,
+      ).bind(String(member.id), String(version), financialStatus, operator.id),
+      env.DB.prepare(
+        `UPDATE users SET financial_status = ?, financial_status_version = financial_status_version + 1,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND financial_status_version = ?`,
+      ).bind(financialStatus, String(member.id), version),
+      await audit(
+        env, operator.id, "member.financial_status", "user", String(member.id),
+        { financialStatus: member.financial_status }, { financialStatus, reason }, requestId,
+      ),
+    ], "FINANCIAL_STATUS_CHANGED", "That member's financial status changed before this update completed.");
+    return json({ id: String(member.id), financialStatus });
+  }
+
+  if (url.pathname === "/v1/console/loans" && request.method === "GET") {
+    const rows = await env.DB.prepare(
+      `SELECT l.*, u.username, u.email, u.financial_status,
+              approver.username AS approved_by_name
+         FROM loans l
+         JOIN users u ON u.id = l.user_id
+         LEFT JOIN users approver ON approver.id = l.approved_by
+        ORDER BY CASE l.status WHEN 'pending' THEN 1 WHEN 'active' THEN 2 ELSE 3 END,
+                 l.requested_at DESC
+        LIMIT 500`,
+    ).all<Record<string, unknown>>();
+    const loans: ConsoleLoan[] = rows.results.map((row) => ({
+      ...mapJoeBankLoan(row),
+      userId: String(row.user_id),
+      username: String(row.username),
+      email: String(row.email),
+      financialStatus: row.financial_status as FinancialStatus,
+      approvedByName: row.approved_by_name ? String(row.approved_by_name) : null,
+    }));
+    return json(loans);
+  }
+
+  const consoleLoanMatch = url.pathname.match(/^\/v1\/console\/loans\/([^/]+)$/);
+  if (consoleLoanMatch && request.method === "PATCH") {
+    const body = await readJson<{
+      action?: "offer" | "decline" | "set_rate";
+      annualRateBps?: number;
+      note?: string;
+    }>(request);
+    if (!body.action || !["offer", "decline", "set_rate"].includes(body.action)) {
+      throw new HttpError(400, "INVALID_LOAN_ACTION", "Choose offer, decline, or set_rate.");
+    }
+    const note = (body.note ?? "").trim();
+    if (note.length < 5 || note.length > 1_000) {
+      throw new HttpError(400, "LOAN_DECISION_NOTE_REQUIRED", "Record a 5–1,000 character decision note.");
+    }
+    const loan = await env.DB.prepare(
+      `SELECT l.*, u.financial_status, u.financial_status_version, u.username
+         FROM loans l JOIN users u ON u.id = l.user_id
+        WHERE l.id = ? LIMIT 1`,
+    ).bind(consoleLoanMatch[1]).first<Record<string, unknown>>();
+    if (!loan) throw new HttpError(404, "LOAN_NOT_FOUND", "That Joe Bank loan was not found.");
+    const version = Number(loan.version);
+    const before = mapJoeBankLoan(loan);
+    const policy = joeBankPolicy(env);
+    const annualRateBps = Number(body.annualRateBps);
+    if (body.action === "offer" || body.action === "set_rate") {
+      if (!Number.isSafeInteger(annualRateBps) || annualRateBps < 0 || annualRateBps > policy.maxRateBps) {
+        throw new HttpError(400, "INVALID_LOAN_RATE", `The annual rate must be between 0 and ${(policy.maxRateBps / 100).toFixed(2)}%.`);
+      }
+    }
+
+    if (body.action === "offer") {
+      if (loan.status !== "pending") throw new HttpError(409, "LOAN_NOT_PENDING", "Only a pending application can receive terms.");
+      if (loan.financial_status !== "bankrupt") throw new HttpError(409, "BANKRUPTCY_CONFIRMATION_REQUIRED", "Confirm the member's bankruptcy classification before offering loan terms.");
+      await operationTransition(env, [
+        env.DB.prepare(
+          `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+           VALUES ('loan', ?, ?, 'offer', ?)`,
+        ).bind(String(loan.id), String(version), operator.id),
+        env.DB.prepare(
+          `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+           VALUES ('financial_status', ?, ?, 'loan_offer', ?)`,
+        ).bind(String(loan.user_id), String(loan.financial_status_version), operator.id),
+        env.DB.prepare(
+          `UPDATE users SET financial_status_version = financial_status_version + 1,
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND financial_status = 'bankrupt' AND financial_status_version = ?`,
+        ).bind(String(loan.user_id), Number(loan.financial_status_version)),
+        env.DB.prepare(
+          `UPDATE loans SET annual_rate_bps = ?, rate_kind = 'variable', approved_by = ?,
+                  decision_note = ?, decided_at = CURRENT_TIMESTAMP,
+                  updated_at = CURRENT_TIMESTAMP, version = version + 1
+            WHERE id = ? AND status = 'pending' AND version = ?`,
+        ).bind(annualRateBps, operator.id, note, String(loan.id), version),
+        await audit(env, operator.id, "loan.offer", "loan", String(loan.id), before, { annualRateBps, rateKind: "variable", note }, requestId),
+      ], "LOAN_CHANGED", "The application changed before the offer was saved.");
+    } else if (body.action === "decline") {
+      if (loan.status !== "pending") throw new HttpError(409, "LOAN_NOT_PENDING", "Only a pending application can be declined.");
+      await operationTransition(env, [
+        env.DB.prepare(
+          `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+           VALUES ('loan', ?, ?, 'operator_decline', ?)`,
+        ).bind(String(loan.id), String(version), operator.id),
+        env.DB.prepare(
+          `UPDATE loans SET status = 'declined', approved_by = ?, decision_note = ?,
+                  decided_at = CURRENT_TIMESTAMP, closed_at = CURRENT_TIMESTAMP,
+                  updated_at = CURRENT_TIMESTAMP, version = version + 1
+            WHERE id = ? AND status = 'pending' AND version = ?`,
+        ).bind(operator.id, note, String(loan.id), version),
+        await audit(env, operator.id, "loan.decline", "loan", String(loan.id), before, { status: "declined", note }, requestId),
+      ], "LOAN_CHANGED", "The application changed before it could be declined.");
+    } else {
+      if (loan.status !== "active") throw new HttpError(409, "LOAN_NOT_ACTIVE", "Only an active loan can receive a rate change.");
+      await operationTransition(env, [
+        env.DB.prepare(
+          `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+           VALUES ('loan', ?, ?, 'set_rate', ?)`,
+        ).bind(String(loan.id), String(version), operator.id),
+        env.DB.prepare(
+          `UPDATE loans SET annual_rate_bps = ?, decision_note = ?, approved_by = ?,
+                  decided_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP,
+                  version = version + 1
+            WHERE id = ? AND status = 'active' AND version = ?`,
+        ).bind(annualRateBps, note, operator.id, String(loan.id), version),
+        await audit(env, operator.id, "loan.rate_change", "loan", String(loan.id), before, { annualRateBps, note }, requestId),
+      ], "LOAN_CHANGED", "The loan changed before the new rate was saved.");
+    }
+    const updated = await env.DB.prepare("SELECT * FROM loans WHERE id = ?").bind(String(loan.id)).first<Record<string, unknown>>();
+    return json(mapJoeBankLoan(updated!));
   }
 
   if (url.pathname === "/v1/console/invitations" && request.method === "POST") {

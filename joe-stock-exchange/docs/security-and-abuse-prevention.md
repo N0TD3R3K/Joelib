@@ -13,9 +13,9 @@
 
 - Registration accepts only configured school domains and one active account
   per verified school email.
-- Invitations, password checks, email verification, secure HttpOnly sessions,
-  neutral authentication errors, and server-side Turnstile validation protect
-  registration and login.
+- Invitations, password checks, email verification, one-use password recovery,
+  secure HttpOnly sessions, neutral authentication errors, and server-side
+  Turnstile validation protect account access.
 - Suspected duplicate-person accounts require a documented administrator review.
 - Role or account-status changes invalidate or re-evaluate active sessions.
 

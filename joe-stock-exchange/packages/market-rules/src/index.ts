@@ -128,6 +128,16 @@ export function reserveForBuy(limitPriceCents: number, quantity: number): number
   return grossCents + feeForGross(grossCents);
 }
 
+export function dailyLoanInterestCents(outstandingCents: number, annualRateBps: number): number {
+  if (!Number.isSafeInteger(outstandingCents) || outstandingCents < 0) {
+    throw new RangeError("Outstanding liability must be a non-negative whole number of cents.");
+  }
+  if (!Number.isSafeInteger(annualRateBps) || annualRateBps < 0) {
+    throw new RangeError("Annual rate must be a non-negative whole number of basis points.");
+  }
+  return Math.max(0, roundMoney((outstandingCents * annualRateBps) / 10_000 / 365));
+}
+
 export function nextBelowOneCloseCount(
   currentCount: number,
   closingPriceCents: number,

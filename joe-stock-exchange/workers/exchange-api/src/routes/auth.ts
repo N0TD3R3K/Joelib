@@ -54,6 +54,27 @@ async function sendVerificationEmail(env: Env, email: string, username: string, 
   }
 }
 
+async function sendPasswordResetEmail(env: Env, email: string, username: string, token: string): Promise<void> {
+  if (!env.RESEND_API_KEY) {
+    if (env.ENVIRONMENT === "production") {
+      throw new HttpError(503, "EMAIL_NOT_CONFIGURED", "Password-reset email delivery is not configured.");
+    }
+    return;
+  }
+  const resetUrl = `https://joese.derekli.dev/reset-password?token=${encodeURIComponent(token)}`;
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      from: env.RESEND_FROM_EMAIL,
+      to: [email],
+      subject: "Reset your JOESE password",
+      html: `<div style="font-family:system-ui;background:#0f1217;color:#f4f6f8;padding:32px;border-radius:16px"><h1 style="color:#f2bf56">JOESE</h1><p>Joello ${username},</p><p>A password reset was requested for your fictional JOESE account. This link expires in 15 minutes and works once.</p><p><a href="${resetUrl}" style="background:#f2bf56;color:#111;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:700">Reset password</a></p><p style="color:#8f99a8">If you did not request this, you can ignore this message.</p></div>`,
+    }),
+  });
+  if (!response.ok) throw new HttpError(502, "EMAIL_DELIVERY_FAILED", "The password-reset email could not be delivered.");
+}
+
 export async function handleAuth(request: Request, url: URL, env: Env): Promise<Response | null> {
   const path = url.pathname.replace(/^\/v1\/auth\/?/, "");
 
@@ -196,6 +217,82 @@ export async function handleAuth(request: Request, url: URL, env: Env): Promise<
       200,
       { "set-cookie": sessionCookie(token, env.ENVIRONMENT) },
     );
+  }
+
+  if (request.method === "POST" && path === "request-password-reset") {
+    const body = await readJson<{ email?: string; turnstileToken?: string }>(request);
+    await verifyTurnstile(request, env, body.turnstileToken, "recovery");
+    const email = normalizeEmail(body.email ?? "");
+    const user = await env.DB.prepare(
+      "SELECT id, username FROM users WHERE email = ? AND status = 'active' LIMIT 1",
+    ).bind(email).first<{ id: string; username: string }>();
+    let developmentResetToken: string | undefined;
+    if (user) {
+      const token = randomToken();
+      const tokenHash = await sha256(token);
+      const tokenId = createId("reset");
+      const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
+      await env.DB.batch([
+        env.DB.prepare(
+          "UPDATE password_reset_tokens SET consumed_at = CURRENT_TIMESTAMP WHERE user_id = ? AND consumed_at IS NULL",
+        ).bind(user.id),
+        env.DB.prepare(
+          "INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)",
+        ).bind(tokenId, user.id, tokenHash, expiresAt),
+      ]);
+      try {
+        await sendPasswordResetEmail(env, email, user.username, token);
+        if (env.ENVIRONMENT !== "production") developmentResetToken = token;
+      } catch (error) {
+        await env.DB.prepare("DELETE FROM password_reset_tokens WHERE id = ?").bind(tokenId).run();
+        console.error("Password-reset delivery failed", { userId: user.id, error });
+      }
+    }
+    return json({
+      message: "If an active account uses that email, a short-lived reset link will be sent.",
+      ...(developmentResetToken ? { developmentResetToken } : {}),
+    });
+  }
+
+  if (request.method === "POST" && path === "reset-password") {
+    const body = await readJson<{ token?: string; password?: string; turnstileToken?: string }>(request);
+    await verifyTurnstile(request, env, body.turnstileToken, "recovery");
+    const password = body.password ?? "";
+    if (!body.token || password.length < 10 || password.length > 128) {
+      throw new HttpError(400, "INVALID_RESET", "Use a valid reset link and a password of 10–128 characters.");
+    }
+    const tokenHash = await sha256(body.token);
+    const token = await env.DB.prepare(
+      `SELECT prt.id, prt.user_id
+         FROM password_reset_tokens prt JOIN users u ON u.id = prt.user_id
+        WHERE prt.token_hash = ? AND prt.consumed_at IS NULL
+          AND prt.expires_at > CURRENT_TIMESTAMP AND u.status = 'active' LIMIT 1`,
+    ).bind(tokenHash).first<{ id: string; user_id: string }>();
+    if (!token) throw new HttpError(400, "INVALID_RESET", "The reset link is invalid or expired.");
+    const passwordResult = await hashPassword(password);
+    try {
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+           VALUES ('password_reset', ?, 'pending', 'consume', ?)`,
+        ).bind(token.id, token.user_id),
+        env.DB.prepare(
+          "UPDATE users SET password_hash = ?, password_salt = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        ).bind(passwordResult.hash, passwordResult.salt, token.user_id),
+        env.DB.prepare(
+          "UPDATE password_reset_tokens SET consumed_at = CURRENT_TIMESTAMP WHERE id = ? AND consumed_at IS NULL",
+        ).bind(token.id),
+        env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(token.user_id),
+        env.DB.prepare(
+          `INSERT INTO audit_log
+            (id, actor_user_id, action, target_type, target_id, after_json, request_id)
+           VALUES (?, ?, 'auth.password_reset', 'user', ?, '{"sessionsRevoked":true}', ?)`,
+        ).bind(createId("audit"), token.user_id, token.user_id, request.headers.get("x-request-id")),
+      ]);
+    } catch {
+      throw new HttpError(400, "INVALID_RESET", "The reset link has already been used.");
+    }
+    return json({ reset: true, sessionsRevoked: true });
   }
 
   if (request.method === "POST" && path === "logout") {

@@ -131,6 +131,44 @@ export interface PortfolioSnapshot {
   inbox: InboxPayload;
 }
 
+export type FinancialStatus = "normal" | "bankrupt";
+export type LoanStatus = "pending" | "active" | "repaid" | "defaulted" | "declined";
+export type LoanStage = "awaiting_review" | "offered" | "active" | "repaid" | "defaulted" | "declined";
+
+export interface JoeBankLoan {
+  id: string;
+  principalCents: number;
+  outstandingCents: number;
+  annualRateBps: number;
+  rateKind: "fixed" | "variable";
+  status: LoanStatus;
+  stage: LoanStage;
+  requestNote: string;
+  decisionNote: string;
+  requestedAt: string;
+  decidedAt: string | null;
+  openedAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+}
+
+export interface JoeBankSnapshot {
+  financialStatus: FinancialStatus;
+  canApply: boolean;
+  maxLoanCents: number;
+  defaultAnnualRateBps: number;
+  disclosure: string;
+  loans: JoeBankLoan[];
+}
+
+export interface ConsoleLoan extends JoeBankLoan {
+  userId: string;
+  username: string;
+  email: string;
+  financialStatus: FinancialStatus;
+  approvedByName: string | null;
+}
+
 export interface ApiError {
   error: {
     code: string;

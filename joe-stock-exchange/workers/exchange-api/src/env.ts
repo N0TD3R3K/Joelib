@@ -10,5 +10,8 @@ export interface Env {
   RESEND_API_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
   INTERNAL_API_KEY: string;
+  JOE_BANK_MAX_LOAN_CENTS?: string;
+  JOE_BANK_DEFAULT_RATE_BPS?: string;
+  JOE_BANK_MAX_RATE_BPS?: string;
 }
 

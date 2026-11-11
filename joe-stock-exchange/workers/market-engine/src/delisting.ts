@@ -2,10 +2,10 @@ function id(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 }
 
-export async function releaseDelistedOrders(
+export async function delistingReleaseStatements(
   db: D1Database,
   asset: { id: string; type: "stock" | "crypto" },
-): Promise<void> {
+): Promise<D1PreparedStatement[]> {
   const orders = await db.prepare(
     `SELECT id, user_id, side, remaining_quantity, reserved_cash_cents
        FROM orders
@@ -13,12 +13,17 @@ export async function releaseDelistedOrders(
       ORDER BY created_at`,
   ).bind(asset.id).all<Record<string, unknown>>();
   const holdingKind = asset.type === "stock" ? "stock" : "crypto";
+  const allStatements: D1PreparedStatement[] = [];
 
   for (const order of orders.results) {
     const orderId = String(order.id);
     const userId = String(order.user_id);
     const remaining = Number(order.remaining_quantity);
     const statements: D1PreparedStatement[] = [
+      db.prepare(
+        `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+         VALUES ('order', ?, ?, 'delisting_cancel', ?)`,
+      ).bind(orderId, String(remaining), userId),
       db.prepare(
         `UPDATE orders SET status = 'cancelled', remaining_quantity = 0, reserved_cash_cents = 0,
                 updated_at = CURRENT_TIMESTAMP
@@ -48,6 +53,7 @@ export async function releaseDelistedOrders(
            (SELECT disposable_balance_cents FROM users WHERE id = ?), ?, ?, 'order', ?)`,
       ).bind(id("led"), userId, userId, asset.id, remaining, orderId));
     }
-    await db.batch(statements);
+    allStatements.push(...statements);
   }
+  return allStatements;
 }

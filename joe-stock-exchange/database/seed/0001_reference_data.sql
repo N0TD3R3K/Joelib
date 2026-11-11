@@ -25,6 +25,20 @@ INSERT OR IGNORE INTO assets (
 ('asset-jobo', 'JOBO', 'Joebotics Team', 'crypto', 'The fictional market outlook of the Joebotics team.', '{"overview":"JOBO reacts to fictional robotics progress, competitions, and team milestones.","developer":"Joe Team","headquarters":"Joe Universe","focus":["Robotics","Competition"]}', 1120, 1028, 1150, 1000, 1028, 1028, 0.0017, 0.070, 0.25, 0.60),
 ('asset-corn', 'CORN', 'CornCoin', 'crypto', 'A meme-inspired crypto-asset from the Joe and robotics teams.', '{"overview":"CornCoin is intentionally playful and among JOESE''s most volatile assets.","developer":"Joe Team","headquarters":"Joe Universe","focus":["Memes","Community"]}', 408, 435, 448, 392, 435, 435, 0.0008, 0.085, 0.25, 0.60);
 
+INSERT OR IGNORE INTO price_points (id, asset_id, price_cents, recorded_at) VALUES
+('seed-price-joe', 'asset-joe', 8425, datetime('now', '-1 hour')),
+('seed-price-jai', 'asset-jai', 4872, datetime('now', '-1 hour')),
+('seed-price-jlg', 'asset-jlg', 3268, datetime('now', '-1 hour')),
+('seed-price-jct', 'asset-jct', 6190, datetime('now', '-1 hour')),
+('seed-price-jei', 'asset-jei', 2754, datetime('now', '-1 hour')),
+('seed-price-jkr', 'asset-jkr', 2196, datetime('now', '-1 hour')),
+('seed-price-juv', 'asset-juv', 10942, datetime('now', '-1 hour')),
+('seed-price-jtcn', 'asset-jtcn', 1289, datetime('now', '-1 hour')),
+('seed-price-link', 'asset-link', 935, datetime('now', '-1 hour')),
+('seed-price-ntdk', 'asset-ntdk', 1744, datetime('now', '-1 hour')),
+('seed-price-jobo', 'asset-jobo', 1120, datetime('now', '-1 hour')),
+('seed-price-corn', 'asset-corn', 408, datetime('now', '-1 hour'));
+
 INSERT OR IGNORE INTO holdings (
   id, user_id, asset_id, holding_kind, quantity, reserved_quantity, average_cost_cents
 ) VALUES

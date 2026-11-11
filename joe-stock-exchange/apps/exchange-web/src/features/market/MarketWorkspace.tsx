@@ -13,7 +13,7 @@ interface Props {
   preferences: UserPreferences;
   marketStatus: "open" | "locked" | "closed";
   onComment: (body: string) => Promise<void>;
-  onOrder: (side: "buy" | "sell", quantity: number) => Promise<void>;
+  onOrder: (side: "buy" | "sell", quantity: number) => Promise<string>;
 }
 
 export function MarketWorkspace({ asset, points, news, comments, preferences, marketStatus, onComment, onOrder }: Props) {
@@ -28,8 +28,7 @@ export function MarketWorkspace({ asset, points, news, comments, preferences, ma
     if (!Number.isFinite(parsed) || parsed <= 0) return;
     setOrderState("Submitting…");
     try {
-      await onOrder(side, parsed);
-      setOrderState("Order opened");
+      setOrderState(await onOrder(side, parsed));
     } catch (error) {
       setOrderState(error instanceof Error ? error.message : "Order failed");
     }
@@ -39,7 +38,8 @@ export function MarketWorkspace({ asset, points, news, comments, preferences, ma
     ["Open", asset.openPriceCents],
     ["High today", asset.highPriceCents],
     ["Low today", asset.lowPriceCents],
-    ["Previous close", asset.closePriceCents],
+    ["Close", asset.closePriceCents],
+    ["Previous close", asset.previousCloseCents],
   ] as const;
 
   return (

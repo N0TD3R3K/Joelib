@@ -45,12 +45,32 @@ been formally classified as bankrupt may request an internal J$ loan from Joe
 Bank. The loan creates a recorded J$ liability and may provide disposable
 balance; it is not real-world credit or a way to deposit or withdraw money.
 
-Interest rates may vary. Before a loan is accepted, JOESE must show its current
-rate, whether the rate can change, the repayment rule, and the resulting ledger
-entries. Loan approval, rate changes, repayments, and any default/recovery
-action require an audit record. The objective bankruptcy threshold and repayment
-schedule are still to be defined before implementation; no loan is granted
-solely because an account's displayed portfolio value has fallen.
+Bankruptcy is an explicit operator classification with a required reason and
+audit record. It is never inferred solely from disposable balance, portfolio
+value, or a short-lived market move. Once classified, a member may submit one
+open application at a time, up to the configured Joe Bank limit.
+
+An operator may decline the application or offer a variable annual percentage
+rate. The member sees the amount, rate, variable-rate disclosure, and decision
+note and must accept those terms before any J$ is credited. An offered rate can
+be revised only through another audited action; accepting and revising the same
+version cannot both succeed.
+
+For an active loan, the 10:00 PM New York close adds one day of interest using
+the outstanding liability and variable APR then in effect:
+
+```text
+daily interest = round(outstanding liability × APR / 365)
+```
+
+The interest is capitalized into the outstanding simulated liability and is
+recorded once per loan and market date. A member may make a partial or full
+repayment from disposable J$ at any time. Version 1 has no automatic payment,
+real-world collection, or automatic default action. Disbursement, rate changes,
+interest, repayments, and classification changes are all preserved in the
+ledger or audit history. The production defaults are a J$10,000 application
+limit, an 8.00% suggested APR, and a 50.00% maximum APR; operators can change
+those deployment settings without changing code.
 
 ## 3. Market schedule and locks
 

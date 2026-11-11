@@ -1,8 +1,9 @@
 import { newYorkMarketParts, nextBelowOneCloseCount, quoteForPrice, shouldDelistStock } from "@joese/market-rules";
 import type { Env } from "./env";
 import { demandPressureForAsset } from "./demand-pressure";
-import { releaseDelistedOrders } from "./delisting";
-import { beginTick, completeTick, failTick } from "./exchange-lock";
+import { delistingReleaseStatements } from "./delisting";
+import { beginTick, failTick } from "./exchange-lock";
+import { loanInterestStatements } from "./loan-interest";
 import { newsImpactForAsset } from "./news-impact";
 import { calculateNextPrice, deterministicMarketMood, ordinaryReturn } from "./price-engine";
 
@@ -35,8 +36,9 @@ export async function runScheduledTick(env: Env, scheduledAt: Date, force = fals
   }
   const marketHour = force && (parts.hour < 14 || parts.hour > 22) ? 14 : parts.hour;
   const mood = deterministicMarketMood(tickKey);
-  const tickId = `tick_${crypto.randomUUID().replaceAll("-", "")}`;
-  if (!(await beginTick(env.DB, tickId, tickKey, parts.dateKey, marketHour, mood))) {
+  const proposedTickId = `tick_${crypto.randomUUID().replaceAll("-", "")}`;
+  const tickId = await beginTick(env.DB, proposedTickId, tickKey, parts.dateKey, marketHour, mood);
+  if (!tickId) {
     return { status: "duplicate", tickKey, assetCount: 0 };
   }
 
@@ -50,6 +52,7 @@ export async function runScheduledTick(env: Env, scheduledAt: Date, force = fals
     const assets = await env.DB.prepare("SELECT * FROM assets WHERE active = 1 ORDER BY ticker")
       .all<AssetRow>();
     const explanations: Record<string, unknown> = {};
+    const tickStatements: D1PreparedStatement[] = [];
 
     for (const asset of assets.results) {
       const currentPrice = Number(asset.current_price_cents);
@@ -76,13 +79,13 @@ export async function runScheduledTick(env: Env, scheduledAt: Date, force = fals
         if (delisted) finalPrice = 0;
       }
       if (delisted) {
-        await releaseDelistedOrders(env.DB, { id: asset.id, type: asset.asset_type });
+        tickStatements.push(...await delistingReleaseStatements(env.DB, { id: asset.id, type: asset.asset_type }));
       }
       const high = Math.max(Number(asset.high_price_cents), finalPrice);
       const low = marketHour === 14
         ? finalPrice
         : Math.min(Number(asset.low_price_cents), finalPrice);
-      await env.DB.batch([
+      tickStatements.push(
         env.DB.prepare(
           `UPDATE assets SET
              current_price_cents = ?,
@@ -106,7 +109,7 @@ export async function runScheduledTick(env: Env, scheduledAt: Date, force = fals
             WHERE user_id = 'usr-joese-issuer' AND asset_id = ? AND side = 'sell'
               AND status IN ('open', 'partially_filled')`,
         ).bind(quoteForPrice(Math.max(1, finalPrice)).askCents, asset.id),
-      ]);
+      );
       explanations[asset.ticker] = {
         priorPriceCents: currentPrice,
         nextPriceCents: finalPrice,
@@ -119,7 +122,18 @@ export async function runScheduledTick(env: Env, scheduledAt: Date, force = fals
         delisted,
       };
     }
-    await completeTick(env.DB, tickId, { tickKey, marketHour, assets: explanations });
+    if (marketHour === 22) {
+      const loanInterest = await loanInterestStatements(env.DB, parts.dateKey);
+      tickStatements.push(...loanInterest.statements);
+      explanations.joeBank = {
+        interestAccruals: loanInterest.loanCount,
+        totalInterestCents: loanInterest.totalInterestCents,
+      };
+    }
+    tickStatements.push(env.DB.prepare(
+      "UPDATE market_ticks SET status = 'complete', explanation_json = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'",
+    ).bind(JSON.stringify({ tickKey, marketHour, assets: explanations }), tickId));
+    await env.DB.batch(tickStatements);
     return { status: "complete", tickKey, assetCount: assets.results.length };
   } catch (error) {
     await failTick(env.DB, tickId, error);

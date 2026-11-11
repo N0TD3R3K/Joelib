@@ -121,7 +121,7 @@ cannot use the console to secretly move a price or trade the market.
 
 - The production D1 backup/retention plan and named incident owner.
 - The final school-domain allowlist and duplicate-person account review process.
-- The objective bankruptcy criteria, Joe Bank repayment rules, and how its
-  variable interest rates are published and applied.
+- The named operator responsible for bankruptcy reviews and the final
+  production values for the configurable Joe Bank limit and rate bounds.
 - Whether a daily integrity hash and post-close reveal of generated market
   conditions will ship in Version 1 or a later release.

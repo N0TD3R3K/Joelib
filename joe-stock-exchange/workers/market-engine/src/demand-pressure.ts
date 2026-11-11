@@ -12,6 +12,7 @@ export async function demandPressureForAsset(
        COALESCE(SUM(CASE WHEN side = 'sell' THEN quantity ELSE 0 END), 0) AS sell_quantity
      FROM orders
      WHERE asset_id = ?
+       AND user_id <> 'usr-joese-issuer'
        AND created_at >= datetime(?, '-62 minutes')
        AND created_at < datetime(?, '-2 minutes')`,
   ).bind(assetId, scheduledAt.toISOString(), scheduledAt.toISOString()).first<Record<string, unknown>>();

@@ -1,10 +1,12 @@
 import type {
   InboxPayload,
+  JoeBankLoan,
+  JoeBankSnapshot,
   MarketSnapshot,
   PortfolioSnapshot,
   UserPreferences,
 } from "@joese/contracts";
-import { createDemoMarketSnapshot, createDemoPortfolioSnapshot } from "@joese/contracts/demo";
+import { createDemoJoeBankSnapshot, createDemoMarketSnapshot, createDemoPortfolioSnapshot } from "@joese/contracts/demo";
 
 const configuredBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "");
 const API_BASE = configuredBase || "/v1";
@@ -47,6 +49,14 @@ export async function verifyEmail(token: string): Promise<void> {
   await request("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) });
 }
 
+export async function requestPasswordReset(email: string, turnstileToken: string): Promise<{ message: string; developmentResetToken?: string }> {
+  return request("/auth/request-password-reset", { method: "POST", body: JSON.stringify({ email, turnstileToken }) });
+}
+
+export async function resetPassword(token: string, password: string, turnstileToken: string): Promise<void> {
+  await request("/auth/reset-password", { method: "POST", body: JSON.stringify({ token, password, turnstileToken }) });
+}
+
 export async function postComment(ticker: string, body: string): Promise<void> {
   if (demoMode) return;
   await request("/comments", { method: "POST", body: JSON.stringify({ ticker, body }) });
@@ -77,8 +87,28 @@ export async function resolveShareOffer(id: string, action: "accept" | "decline"
   await request(`/share-offers/${id}/${action}`, { method: "POST", body: "{}" });
 }
 
-export async function createOrder(input: { ticker: string; side: "buy" | "sell"; quantity: number }): Promise<void> {
+export async function createOrder(input: { ticker: string; side: "buy" | "sell"; quantity: number }): Promise<{ status: string; matchedTrades: number }> {
+  if (demoMode) return { status: "open", matchedTrades: 0 };
+  return request("/orders", { method: "POST", body: JSON.stringify(input) });
+}
+
+export async function loadJoeBank(): Promise<JoeBankSnapshot> {
+  if (demoMode) return createDemoJoeBankSnapshot();
+  return request<JoeBankSnapshot>("/joe-bank");
+}
+
+export async function applyForJoeBankLoan(amountCents: number, note: string): Promise<JoeBankLoan> {
+  if (demoMode) return createDemoJoeBankSnapshot().loans[0];
+  return request<JoeBankLoan>("/joe-bank/applications", { method: "POST", body: JSON.stringify({ amountCents, note }) });
+}
+
+export async function decideJoeBankOffer(id: string, action: "accept" | "decline"): Promise<void> {
   if (demoMode) return;
-  await request("/orders", { method: "POST", body: JSON.stringify(input) });
+  await request(`/joe-bank/loans/${id}/${action}`, { method: "POST", body: "{}" });
+}
+
+export async function repayJoeBankLoan(id: string, amountCents: number): Promise<void> {
+  if (demoMode) return;
+  await request(`/joe-bank/loans/${id}/repay`, { method: "POST", body: JSON.stringify({ amountCents }) });
 }
 

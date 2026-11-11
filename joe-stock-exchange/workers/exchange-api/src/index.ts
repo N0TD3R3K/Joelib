@@ -4,6 +4,7 @@ import { openApiDocument } from "./openapi";
 import { handleAuth } from "./routes/auth";
 import { handleBootstrap } from "./routes/bootstrap";
 import { handleMarket } from "./routes/market";
+import { handleJoeBank } from "./routes/joe-bank";
 import { handleOperations } from "./routes/operations";
 import { handlePortfolio } from "./routes/portfolio";
 import { handleTrades } from "./routes/trades";
@@ -29,7 +30,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     return json(openApiDocument);
   }
 
-  const handlers = [handleBootstrap, handleAuth, handleMarket, handlePortfolio, handleTrades, handleOperations];
+  const handlers = [handleBootstrap, handleAuth, handleMarket, handlePortfolio, handleJoeBank, handleTrades, handleOperations];
   for (const handler of handlers) {
     const response = await handler(request, url, env);
     if (response) return response;

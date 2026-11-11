@@ -34,7 +34,8 @@ joe-stock-exchange/
 4. Load the reference assets with `npm run db:seed:local`.
 5. Start the API using `npm run dev:api`.
 6. In separate terminals, start `npm run dev:exchange` and
-   `npm run dev:console`.
+   `npm run dev:console`. Start `npm run dev:engine` when testing scheduled
+   ticks. Both Workers use the same ignored local D1 state under `.wrangler/`.
 
 Both web apps can use `VITE_DEMO_MODE=true` for visual development without a
 running API. Production builds must use `VITE_DEMO_MODE=false` and set
@@ -61,4 +62,9 @@ with the ID returned by Cloudflare before the first remote migration or deploy.
 
 The API surface is documented in [docs/openapi.yaml](docs/openapi.yaml) and is
 also available from a running API at `GET /v1/openapi.json`.
+
+Joe Bank recovery lending uses an operator-confirmed bankruptcy classification,
+an operator-offered variable rate, explicit member acceptance, daily close
+interest, and voluntary partial or full repayment. Its limits and rate bounds
+are deployment variables in the API Worker configuration.
 

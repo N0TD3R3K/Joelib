@@ -1,6 +1,7 @@
 import type {
   Asset,
   Holding,
+  JoeBankSnapshot,
   MarketComment,
   MarketSnapshot,
   NewsEvent,
@@ -148,6 +149,34 @@ export function createDemoPortfolioSnapshot(): PortfolioSnapshot {
         { id: "offer-1", sellerName: "notderek", buyerName: "joe.investor", ticker: "JCT", quantity: 4, askingPriceCents: 24000, status: "pending", createdAt: isoHoursAgo(5) },
       ],
     },
+  };
+}
+
+export function createDemoJoeBankSnapshot(): JoeBankSnapshot {
+  return {
+    financialStatus: "bankrupt",
+    canApply: false,
+    maxLoanCents: 1_000_000,
+    defaultAnnualRateBps: 800,
+    disclosure: "Joe Bank loans use a variable annual rate. Daily interest is added once at the 10:00 PM New York close, using the rate and outstanding liability then in effect. Repayments may be made from disposable J$ at any time; no automatic payment or real-world obligation exists.",
+    loans: [
+      {
+        id: "loan-demo",
+        principalCents: 75_000,
+        outstandingCents: 75_000,
+        annualRateBps: 850,
+        rateKind: "variable",
+        status: "active",
+        stage: "active",
+        requestNote: "Temporary support while reorganizing my simulated portfolio.",
+        decisionNote: "Approved for the standard recovery window.",
+        requestedAt: isoHoursAgo(48),
+        decidedAt: isoHoursAgo(44),
+        openedAt: isoHoursAgo(43),
+        updatedAt: isoHoursAgo(20),
+        closedAt: null,
+      },
+    ],
   };
 }
 

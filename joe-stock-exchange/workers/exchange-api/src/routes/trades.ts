@@ -39,10 +39,25 @@ async function requireTradingWindow(env: Env): Promise<void> {
     );
   }
   const runningTick = await env.DB.prepare(
-    "SELECT id FROM market_ticks WHERE status = 'running' ORDER BY started_at DESC LIMIT 1",
+    `SELECT id FROM market_ticks
+      WHERE status = 'running' AND started_at >= datetime('now', '-10 minutes')
+      ORDER BY started_at DESC LIMIT 1`,
   ).first();
   if (runningTick) {
     throw new HttpError(423, "MARKET_LOCKED", "Trading is briefly locked while the official price update completes.");
+  }
+}
+
+async function applyStateTransition(
+  db: D1Database,
+  statements: D1PreparedStatement[],
+  code: string,
+  message: string,
+): Promise<void> {
+  try {
+    await db.batch(statements);
+  } catch {
+    throw new HttpError(409, code, message);
   }
 }
 
@@ -113,7 +128,11 @@ export async function handleTrades(request: Request, url: URL, env: Env): Promis
     if (!transfer) throw new HttpError(404, "TRANSFER_NOT_FOUND", "That pending transfer is unavailable.");
     const amount = Number(transfer.amount_cents);
     if (action === "accept") {
-      await env.DB.batch([
+      await applyStateTransition(env.DB, [
+        env.DB.prepare(
+          `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+           VALUES ('cash_transfer', ?, 'pending', 'accept', ?)`,
+        ).bind(id, user.id),
         env.DB.prepare(
           `UPDATE users SET disposable_balance_cents = disposable_balance_cents + ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND EXISTS (SELECT 1 FROM cash_transfers WHERE id = ? AND status = 'pending')`,
@@ -126,9 +145,13 @@ export async function handleTrades(request: Request, url: URL, env: Env): Promis
             (id, user_id, entry_type, amount_cents, balance_after_cents, reference_type, reference_id)
            VALUES (?, ?, 'transfer_received', ?, (SELECT disposable_balance_cents FROM users WHERE id = ?), 'cash_transfer', ?)`,
         ).bind(createId("led"), user.id, amount, user.id, id),
-      ]);
+      ], "TRANSFER_ALREADY_RESOLVED", "That transfer was already accepted, declined, or cancelled.");
     } else {
-      await env.DB.batch([
+      await applyStateTransition(env.DB, [
+        env.DB.prepare(
+          `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+           VALUES ('cash_transfer', ?, 'pending', 'decline', ?)`,
+        ).bind(id, user.id),
         env.DB.prepare(
           `UPDATE users SET disposable_balance_cents = disposable_balance_cents + ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND EXISTS (SELECT 1 FROM cash_transfers WHERE id = ? AND status = 'pending')`,
@@ -141,9 +164,38 @@ export async function handleTrades(request: Request, url: URL, env: Env): Promis
             (id, user_id, entry_type, amount_cents, balance_after_cents, reference_type, reference_id)
            VALUES (?, ?, 'transfer_returned', ?, (SELECT disposable_balance_cents FROM users WHERE id = ?), 'cash_transfer', ?)`,
         ).bind(createId("led"), String(transfer.sender_id), amount, String(transfer.sender_id), id),
-      ]);
+      ], "TRANSFER_ALREADY_RESOLVED", "That transfer was already accepted, declined, or cancelled.");
     }
     return json({ id, status: action === "accept" ? "accepted" : "declined" });
+  }
+
+  const transferCancel = url.pathname.match(/^\/v1\/transfers\/([^/]+)\/cancel$/);
+  if (transferCancel && request.method === "POST") {
+    const user = await requireUser(request, env);
+    memberOnly(user.role);
+    const transfer = await env.DB.prepare(
+      "SELECT id, amount_cents FROM cash_transfers WHERE id = ? AND sender_id = ? AND status = 'pending' LIMIT 1",
+    ).bind(transferCancel[1], user.id).first<{ id: string; amount_cents: number }>();
+    if (!transfer) throw new HttpError(404, "TRANSFER_NOT_FOUND", "That pending outgoing transfer is unavailable.");
+    await applyStateTransition(env.DB, [
+      env.DB.prepare(
+        `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+         VALUES ('cash_transfer', ?, 'pending', 'cancel', ?)`,
+      ).bind(transfer.id, user.id),
+      env.DB.prepare(
+        "UPDATE users SET disposable_balance_cents = disposable_balance_cents + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      ).bind(transfer.amount_cents, user.id),
+      env.DB.prepare(
+        "UPDATE cash_transfers SET status = 'cancelled', resolved_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'",
+      ).bind(transfer.id),
+      env.DB.prepare(
+        `INSERT INTO ledger_entries
+          (id, user_id, entry_type, amount_cents, balance_after_cents, reference_type, reference_id)
+         VALUES (?, ?, 'transfer_cancelled_return', ?,
+           (SELECT disposable_balance_cents FROM users WHERE id = ?), 'cash_transfer', ?)`,
+      ).bind(createId("led"), user.id, transfer.amount_cents, user.id, transfer.id),
+    ], "TRANSFER_ALREADY_RESOLVED", "That transfer was already accepted, declined, or cancelled.");
+    return json({ id: transfer.id, status: "cancelled" });
   }
 
   if (url.pathname === "/v1/share-offers" && request.method === "POST") {
@@ -217,6 +269,10 @@ export async function handleTrades(request: Request, url: URL, env: Env): Promis
       const averageCost = Math.round(((previousQuantity * Number(existing?.average_cost_cents ?? 0)) + gross) / (previousQuantity + quantity));
       const statements: D1PreparedStatement[] = [
         env.DB.prepare(
+          `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+           VALUES ('share_offer', ?, 'pending', 'accept', ?)`,
+        ).bind(id, user.id),
+        env.DB.prepare(
           "UPDATE users SET disposable_balance_cents = disposable_balance_cents - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
         ).bind(gross + fee, user.id),
         env.DB.prepare(
@@ -251,9 +307,13 @@ export async function handleTrades(request: Request, url: URL, env: Env): Promis
            VALUES (?, ?, 'share_offer_sale', ?, (SELECT disposable_balance_cents FROM users WHERE id = ?), ?, ?, 'share_offer', ?)`,
         ).bind(createId("led"), String(offer.seller_id), gross - fee, String(offer.seller_id), String(offer.asset_id), -quantity, id),
       );
-      await env.DB.batch(statements);
+      await applyStateTransition(env.DB, statements, "OFFER_ALREADY_RESOLVED", "That share offer was already accepted, declined, or cancelled.");
     } else {
-      await env.DB.batch([
+      await applyStateTransition(env.DB, [
+        env.DB.prepare(
+          `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+           VALUES ('share_offer', ?, 'pending', 'decline', ?)`,
+        ).bind(id, user.id),
         env.DB.prepare(
           `UPDATE holdings SET frozen_quantity = frozen_quantity + ?, reserved_quantity = reserved_quantity - ?, updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ? AND asset_id = ? AND holding_kind = 'shareholding'`,
@@ -265,9 +325,40 @@ export async function handleTrades(request: Request, url: URL, env: Env): Promis
            VALUES (?, ?, 'share_offer_declined_release', 0,
              (SELECT disposable_balance_cents FROM users WHERE id = ?), ?, ?, 'share_offer', ?)`,
         ).bind(createId("led"), String(offer.seller_id), String(offer.seller_id), String(offer.asset_id), quantity, id),
-      ]);
+      ], "OFFER_ALREADY_RESOLVED", "That share offer was already accepted, declined, or cancelled.");
     }
     return json({ id, status: action === "accept" ? "accepted" : "declined" });
+  }
+
+  const offerCancel = url.pathname.match(/^\/v1\/share-offers\/([^/]+)\/cancel$/);
+  if (offerCancel && request.method === "POST") {
+    const user = await requireUser(request, env);
+    memberOnly(user.role);
+    const offer = await env.DB.prepare(
+      "SELECT id, asset_id, quantity FROM share_offers WHERE id = ? AND seller_id = ? AND status = 'pending' LIMIT 1",
+    ).bind(offerCancel[1], user.id).first<{ id: string; asset_id: string; quantity: number }>();
+    if (!offer) throw new HttpError(404, "OFFER_NOT_FOUND", "That pending outgoing share offer is unavailable.");
+    await applyStateTransition(env.DB, [
+      env.DB.prepare(
+        `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+         VALUES ('share_offer', ?, 'pending', 'cancel', ?)`,
+      ).bind(offer.id, user.id),
+      env.DB.prepare(
+        `UPDATE holdings SET frozen_quantity = frozen_quantity + ?, reserved_quantity = reserved_quantity - ?,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE user_id = ? AND asset_id = ? AND holding_kind = 'shareholding' AND reserved_quantity >= ?`,
+      ).bind(offer.quantity, offer.quantity, user.id, offer.asset_id, offer.quantity),
+      env.DB.prepare(
+        "UPDATE share_offers SET status = 'cancelled', resolved_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'",
+      ).bind(offer.id),
+      env.DB.prepare(
+        `INSERT INTO ledger_entries
+          (id, user_id, entry_type, amount_cents, balance_after_cents, asset_id, quantity, reference_type, reference_id)
+         VALUES (?, ?, 'share_offer_cancelled_release', 0,
+           (SELECT disposable_balance_cents FROM users WHERE id = ?), ?, ?, 'share_offer', ?)`,
+      ).bind(createId("led"), user.id, user.id, offer.asset_id, offer.quantity, offer.id),
+    ], "OFFER_ALREADY_RESOLVED", "That share offer was already accepted, declined, or cancelled.");
+    return json({ id: offer.id, status: "cancelled" });
   }
 
   if (url.pathname === "/v1/orders" && request.method === "GET") {
@@ -294,6 +385,10 @@ export async function handleTrades(request: Request, url: URL, env: Env): Promis
     if (!order) throw new HttpError(404, "ORDER_NOT_FOUND", "That open order was not found.");
     const remaining = Number(order.remaining_quantity);
     const statements: D1PreparedStatement[] = [
+      env.DB.prepare(
+        `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+         VALUES ('order', ?, ?, 'cancel', ?)`,
+      ).bind(String(order.id), String(order.remaining_quantity), user.id),
       env.DB.prepare(
         `UPDATE orders SET status = 'cancelled', remaining_quantity = 0, reserved_cash_cents = 0,
                 updated_at = CURRENT_TIMESTAMP
@@ -328,7 +423,7 @@ export async function handleTrades(request: Request, url: URL, env: Env): Promis
         ).bind(createId("led"), user.id, user.id, String(order.asset_id), remaining, String(order.id)),
       );
     }
-    await env.DB.batch(statements);
+    await applyStateTransition(env.DB, statements, "ORDER_ALREADY_RESOLVED", "That order was filled or cancelled before the cancellation completed.");
     return json({ id: String(order.id), status: "cancelled" });
   }
 

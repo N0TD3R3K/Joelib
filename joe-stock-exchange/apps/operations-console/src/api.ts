@@ -1,4 +1,4 @@
-import type { Asset, MarketComment, NewsEvent } from "@joese/contracts";
+import type { Asset, ConsoleLoan, FinancialStatus, MarketComment, NewsEvent } from "@joese/contracts";
 import { demoAssets, demoComments, demoNews } from "@joese/contracts/demo";
 
 const API_BASE = ((import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "")) || "/v1";
@@ -16,23 +16,24 @@ export async function consoleLogin(email: string, password: string, turnstileTok
   await request("/auth/login", { method: "POST", body: JSON.stringify({ email, password, turnstileToken }) });
 }
 
-export async function loadConsoleData(): Promise<{ assets: Asset[]; news: NewsEvent[]; comments: MarketComment[]; members: Record<string, unknown>[]; market: { ticks: Record<string, unknown>[]; orders: Record<string, unknown>[] }; audit: Record<string, unknown>[] }> {
+export async function loadConsoleData(): Promise<{ assets: Asset[]; news: NewsEvent[]; comments: MarketComment[]; members: Record<string, unknown>[]; loans: ConsoleLoan[]; market: { ticks: Record<string, unknown>[]; orders: Record<string, unknown>[] }; audit: Record<string, unknown>[] }> {
   if (demoMode) {
     return {
       assets: structuredClone(demoAssets), news: structuredClone(demoNews), comments: structuredClone(demoComments),
       members: [
-        { id: "u1", username: "joe.investor", email: "investor@school.example", role: "member", status: "active", disposable_balance_cents: 623447 },
-        { id: "u2", username: "notderek", email: "developer@school.example", role: "member", status: "active", disposable_balance_cents: 287000 },
+        { id: "u1", username: "joe.investor", email: "investor@school.example", role: "member", status: "active", financial_status: "bankrupt", disposable_balance_cents: 623447, borrowed_principal_cents: 75000 },
+        { id: "u2", username: "notderek", email: "developer@school.example", role: "member", status: "active", financial_status: "normal", disposable_balance_cents: 287000, borrowed_principal_cents: 0 },
       ],
+      loans: [{ id: "loan-demo", userId: "u1", username: "joe.investor", email: "investor@school.example", financialStatus: "bankrupt", approvedByName: "market.ops", principalCents: 75000, outstandingCents: 75000, annualRateBps: 850, rateKind: "variable", status: "active", stage: "active", requestNote: "Temporary support while reorganizing my simulated portfolio.", decisionNote: "Approved for the standard recovery window.", requestedAt: new Date(Date.now() - 172800000).toISOString(), decidedAt: new Date(Date.now() - 158400000).toISOString(), openedAt: new Date(Date.now() - 154800000).toISOString(), updatedAt: new Date().toISOString(), closedAt: null }],
       market: { ticks: [{ id: "tick1", tick_key: "2026-11-11T18:00:00[America/New_York]", status: "complete", market_hour: 18 }], orders: [{ status: "open", count: 14 }] },
       audit: [{ id: "a1", actor_name: "market.ops", action: "news.create", target_type: "news_event", created_at: new Date().toISOString() }],
     };
   }
-  const [assets, news, comments, members, market, audit] = await Promise.all([
+  const [assets, news, comments, members, loans, market, audit] = await Promise.all([
     request<Asset[]>("/console/assets"), request<NewsEvent[]>("/console/news"), request<MarketComment[]>("/console/comments"),
-    request<Record<string, unknown>[]>("/console/members"), request<{ ticks: Record<string, unknown>[]; orders: Record<string, unknown>[] }>("/console/market"), request<Record<string, unknown>[]>("/console/audit"),
+    request<Record<string, unknown>[]>("/console/members"), request<ConsoleLoan[]>("/console/loans"), request<{ ticks: Record<string, unknown>[]; orders: Record<string, unknown>[] }>("/console/market"), request<Record<string, unknown>[]>("/console/audit"),
   ]);
-  return { assets, news, comments, members, market, audit };
+  return { assets, news, comments, members, loans, market, audit };
 }
 
 export async function saveAsset(asset: Asset): Promise<Asset> {
@@ -48,5 +49,15 @@ export async function createNews(input: Omit<NewsEvent, "id" | "publishedAt" | "
 export async function moderateComment(id: string, status: MarketComment["status"]): Promise<void> {
   if (demoMode) return;
   await request(`/console/comments/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+}
+
+export async function updateMemberFinancialStatus(id: string, financialStatus: FinancialStatus, reason: string): Promise<void> {
+  if (demoMode) return;
+  await request(`/console/members/${id}/financial-status`, { method: "PATCH", body: JSON.stringify({ financialStatus, reason }) });
+}
+
+export async function updateConsoleLoan(id: string, input: { action: "offer" | "decline" | "set_rate"; annualRateBps?: number; note: string }): Promise<void> {
+  if (demoMode) return;
+  await request(`/console/loans/${id}`, { method: "PATCH", body: JSON.stringify(input) });
 }
 

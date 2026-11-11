@@ -12,7 +12,7 @@ declare global {
 const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 export const turnstileEnabled = Boolean(siteKey);
 
-export function TurnstileWidget({ action, onToken }: { action: "login" | "register"; onToken: (token: string) => void }) {
+export function TurnstileWidget({ action, onToken }: { action: "login" | "register" | "recovery"; onToken: (token: string) => void }) {
   const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

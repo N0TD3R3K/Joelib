@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateNextPrice,
+  dailyLoanInterestCents,
   grossForTrade,
   isCryptoQuantityValid,
   isScheduledMarketTick,
@@ -61,6 +62,12 @@ describe("JOESE market rules", () => {
   it("rounds trade values and reserves the buy-side fee", () => {
     expect(grossForTrade(1_025, 3)).toBe(3_075);
     expect(reserveForBuy(1_025, 3)).toBe(3_083);
+  });
+
+  it("rounds one day of variable-rate Joe Bank interest to cents", () => {
+    expect(dailyLoanInterestCents(175_000, 975)).toBe(47);
+    expect(dailyLoanInterestCents(175_000, 0)).toBe(0);
+    expect(() => dailyLoanInterestCents(-1, 975)).toThrow(RangeError);
   });
 });
 

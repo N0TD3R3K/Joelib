@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --config wrangler.jsonc --test-scheduled",
+    "dev": "wrangler dev --config wrangler.jsonc --test-scheduled --persist-to ../../.wrangler/state",
     "build": "wrangler deploy --dry-run --config wrangler.jsonc --outdir dist",
     "typecheck": "tsc -p tsconfig.json",
     "deploy": "node ../../scripts/check-worker-config.mjs && wrangler deploy --config wrangler.jsonc"

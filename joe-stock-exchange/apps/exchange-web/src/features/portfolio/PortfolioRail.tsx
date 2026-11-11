@@ -9,6 +9,7 @@ interface Props {
   onInbox: () => void;
   onSellShares: (holding: Holding) => void;
   onSettings: () => void;
+  onJoeBank: () => void;
 }
 
 function HoldingTable({ title, holdings, onSellShares }: { title: string; holdings: Holding[]; onSellShares?: (holding: Holding) => void }) {
@@ -31,14 +32,14 @@ function HoldingTable({ title, holdings, onSellShares }: { title: string; holdin
   );
 }
 
-export function PortfolioRail({ portfolio, onCollapse, onTransaction, onInbox, onSellShares, onSettings }: Props) {
+export function PortfolioRail({ portfolio, onCollapse, onTransaction, onInbox, onSellShares, onSettings, onJoeBank }: Props) {
   const { summary, holdings, inbox } = portfolio;
   const inboxCount = inbox.transfers.length + inbox.shareOffers.length;
   const metricCards = [
     { label: "Frozen assets", value: summary.frozenAssetValueCents, icon: Snowflake, tone: "violet" },
     { label: "Asset value", value: summary.assetValueCents, icon: WalletCards, tone: "blue" },
     { label: "Disposable", value: summary.disposableBalanceCents, icon: CreditCard, tone: "gold" },
-    { label: "Joe Bank", value: summary.borrowedCents, icon: Landmark, tone: "red" },
+    { label: "Joe Bank", value: summary.borrowedCents, icon: Landmark, tone: "red", action: onJoeBank },
   ];
   return (
     <aside className="portfolio-rail">
@@ -52,12 +53,12 @@ export function PortfolioRail({ portfolio, onCollapse, onTransaction, onInbox, o
         <button className="inbox-button" onClick={onSettings} title="Settings"><Settings size={18} /></button>
       </div>
       <div className="wealth-grid">
-        {metricCards.map(({ label, value, icon: Icon, tone }) => (
-          <article className={`wealth-card ${tone}`} key={label}>
-            <div><span>{label}</span><Icon size={16} /></div>
-            <strong>{formatJoellars(value, { compact: summary.preferences.compactNumbers })}</strong>
-          </article>
-        ))}
+        {metricCards.map(({ label, value, icon: Icon, tone, action }) => {
+          const content = <><div><span>{label}</span><Icon size={16} /></div><strong>{formatJoellars(value, { compact: summary.preferences.compactNumbers })}</strong></>;
+          return action
+            ? <button type="button" className={`wealth-card ${tone} actionable`} key={label} onClick={action} title="Open Joe Bank">{content}</button>
+            : <article className={`wealth-card ${tone}`} key={label}>{content}</article>;
+        })}
       </div>
       <div className="portfolio-total"><span>Simulated net position</span><strong>{formatJoellars(summary.disposableBalanceCents + summary.frozenAssetValueCents + summary.assetValueCents - summary.borrowedCents)}</strong></div>
       <div className="holdings-scroll">

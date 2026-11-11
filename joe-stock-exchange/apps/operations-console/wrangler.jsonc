@@ -2,7 +2,7 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "joese-operations-console",
   "compatibility_date": "2026-11-11",
-  "workers_dev": true,
+  "workers_dev": false,
   "routes": [
     { "pattern": "console.joese.derekli.dev", "custom_domain": true }
   ],

@@ -12,6 +12,9 @@
 The Cron Trigger runs every UTC hour. The engine checks `America/New_York` at
 runtime and produces ticks only from 2:00 PM through 10:00 PM local time. This
 avoids a fixed UTC schedule drifting when daylight-saving time changes.
+All four production Workers disable their default `workers.dev` address. The
+three browser/API surfaces use only their reviewed custom domains; the market
+engine has no public route and is invoked by its Cron Trigger.
 
 ## First deployment
 
@@ -38,7 +41,8 @@ avoids a fixed UTC schedule drifting when daylight-saving time changes.
    keep demo mode disabled. The deploy scripts refuse to continue if these
    values are incomplete. Review
    `ALLOWED_EMAIL_DOMAINS`, `ALLOWED_ORIGINS`, and `RESEND_FROM_EMAIL` in the
-   API Wrangler file.
+   API Wrangler file. Also confirm the Joe Bank application limit, suggested
+   rate, and maximum rate; the Worker deployment check rejects invalid values.
 6. Apply migrations and seed only the reference data:
 
    ```sh
@@ -83,9 +87,12 @@ avoids a fixed UTC schedule drifting when daylight-saving time changes.
 | `REQUIRE_INVITE` | API | No | Require a valid invitation during registration. |
 | `RESEND_FROM_EMAIL` | API | No | Verified transactional sender. |
 | `SESSION_SECRET` | API | Yes | Additional entropy for session-token hashing. |
-| `RESEND_API_KEY` | API | Yes | Verification email delivery. |
+| `RESEND_API_KEY` | API | Yes | Verification and password-recovery email delivery. |
 | `TURNSTILE_SECRET_KEY` | API | Yes | Server-side registration and login challenge validation. |
 | `INTERNAL_API_KEY` | API and engine | Yes | Protects internal tick and health coordination. |
+| `JOE_BANK_MAX_LOAN_CENTS` | API | No | Maximum requested recovery loan in whole cents. |
+| `JOE_BANK_DEFAULT_RATE_BPS` | API | No | Suggested variable APR shown to operators, in basis points. |
+| `JOE_BANK_MAX_RATE_BPS` | API | No | Server-enforced maximum variable APR, in basis points. |
 
 ## Pre-launch checks
 
@@ -101,5 +108,7 @@ avoids a fixed UTC schedule drifting when daylight-saving time changes.
 - Confirm only a seller can initiate a frozen-share offer.
 - Confirm the market engine is idempotent for the same hourly tick.
 - Confirm backups, retention, incident response, and account-recovery ownership.
-- Do not open public membership until the reviewed password-recovery flow is enabled.
+- Confirm password-reset links expire, work once, and revoke prior sessions.
+- Confirm bankruptcy changes require an operator reason, members accept offered
+  loan terms before disbursement, and the 10:00 PM interest accrual runs once.
 

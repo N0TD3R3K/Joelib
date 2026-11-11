@@ -1,10 +1,11 @@
-import type { Holding, MarketComment, MarketSnapshot, PortfolioSnapshot, UserPreferences } from "@joese/contracts";
+import type { Holding, JoeBankSnapshot, MarketComment, MarketSnapshot, PortfolioSnapshot, UserPreferences } from "@joese/contracts";
 import { formatJoellars, formatQuantity } from "@joese/ui";
-import { Bell, ChevronLeft, Clock3, Inbox, Menu, Settings, X } from "lucide-react";
+import { Bell, ChevronLeft, Clock3, Inbox, Landmark, Menu, RefreshCw, Settings, ShieldCheck, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  createOrder, createShareOffer, createTransfer, demoMode, loadMarket, loadPortfolio,
-  postComment, resolveShareOffer, resolveTransfer, updateSettings, verifyEmail,
+  applyForJoeBankLoan, createOrder, createShareOffer, createTransfer, decideJoeBankOffer,
+  demoMode, loadJoeBank, loadMarket, loadPortfolio, postComment, repayJoeBankLoan,
+  resolveShareOffer, resolveTransfer, updateSettings, verifyEmail,
 } from "./api";
 import { AuthScreen } from "./features/auth/AuthScreen";
 import { AssetRail } from "./features/market/AssetRail";
@@ -12,7 +13,7 @@ import { MarketWorkspace } from "./features/market/MarketWorkspace";
 import { PortfolioRail } from "./features/portfolio/PortfolioRail";
 import { SettingsPage } from "./features/settings/SettingsPage";
 
-type Modal = "transaction" | "inbox" | "share-offer" | null;
+type Modal = "transaction" | "inbox" | "share-offer" | "joe-bank" | null;
 
 export function App() {
   const [market, setMarket] = useState<MarketSnapshot | null>(null);
@@ -103,7 +104,7 @@ export function App() {
           preferences={portfolio.summary.preferences}
           marketStatus={market.marketStatus}
           onComment={handleComment}
-          onOrder={async (side, quantity) => { await createOrder({ ticker: selectedAsset.ticker, side, quantity }); await refresh(); notify(`${side === "buy" ? "Buy" : "Sell"} order opened for ${formatQuantity(quantity)} ${selectedAsset.ticker}`); }}
+          onOrder={async (side, quantity) => { const order = await createOrder({ ticker: selectedAsset.ticker, side, quantity }); await refresh(); const message = order.status === "filled" ? `Order filled for ${formatQuantity(quantity)} ${selectedAsset.ticker}` : `${side === "buy" ? "Buy" : "Sell"} order opened for ${formatQuantity(quantity)} ${selectedAsset.ticker}`; notify(message); return message; }}
         />
         {rightOpen ? (
           <PortfolioRail
@@ -112,6 +113,7 @@ export function App() {
             onTransaction={() => setModal("transaction")}
             onInbox={() => setModal("inbox")}
             onSettings={() => { setPage("settings"); window.history.pushState({}, "", "/settings"); }}
+            onJoeBank={() => setModal("joe-bank")}
             onSellShares={(holding) => { setSelectedHolding(holding); setModal("share-offer"); }}
           />
         ) : (
@@ -121,6 +123,7 @@ export function App() {
       {modal === "transaction" && <TransactionModal available={portfolio.summary.disposableBalanceCents} onClose={() => setModal(null)} onSubmit={async (receiver, amountCents, message) => { await createTransfer(receiver, amountCents, message); setPortfolio((current) => current ? { ...current, summary: { ...current.summary, disposableBalanceCents: current.summary.disposableBalanceCents - amountCents } } : current); setModal(null); notify("Transaction sent to the receiver's inbox"); }} />}
       {modal === "inbox" && <InboxModal portfolio={portfolio} onClose={() => setModal(null)} onTransfer={async (id, action) => { await resolveTransfer(id, action); await refresh(); setModal(null); notify(`Transfer ${action === "accept" ? "received" : "declined"}`); }} onOffer={async (id, action) => { await resolveShareOffer(id, action); await refresh(); setModal(null); notify(`Share offer ${action === "accept" ? "accepted" : "declined"}`); }} />}
       {modal === "share-offer" && selectedHolding && <ShareOfferModal holding={selectedHolding} onClose={() => setModal(null)} onSubmit={async (buyer, quantity, askingPriceCents) => { await createShareOffer({ buyer, ticker: selectedHolding.ticker, quantity, askingPriceCents }); await refresh(); setModal(null); notify(`Frozen ${selectedHolding.ticker} offer sent to ${buyer}`); }} />}
+      {modal === "joe-bank" && <JoeBankModal availableCents={portfolio.summary.disposableBalanceCents} onClose={() => setModal(null)} onPortfolioChange={refresh} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
@@ -144,5 +147,40 @@ function ShareOfferModal({ holding, onClose, onSubmit }: { holding: Holding; onC
 function InboxModal({ portfolio, onClose, onTransfer, onOffer }: { portfolio: PortfolioSnapshot; onClose: () => void; onTransfer: (id: string, action: "accept" | "decline") => Promise<void>; onOffer: (id: string, action: "accept" | "decline") => Promise<void> }) {
   const { transfers, shareOffers } = portfolio.inbox;
   return <ModalShell title="Inbox" eyebrow="PENDING FOR YOUR DECISION" onClose={onClose}><div className="inbox-list">{transfers.map((item) => <article className="inbox-item" key={item.id}><div className="inbox-icon">J$</div><div><strong>{item.senderName} sent {formatJoellars(item.amountCents)}</strong><p>{item.message || "No message"}</p><span>Funds arrive only if you receive them.</span></div><div className="inbox-decisions"><button onClick={() => onTransfer(item.id, "decline")}>Decline</button><button className="accept" onClick={() => onTransfer(item.id, "accept")}>Receive</button></div></article>)}{shareOffers.map((item) => <article className="inbox-item" key={item.id}><div className="inbox-icon shares">{item.ticker}</div><div><strong>{item.sellerName} offered {formatQuantity(item.quantity)} {item.ticker}</strong><p>Total asking price: {formatJoellars(item.askingPriceCents)}</p><span>Accepted shares remain frozen shareholding assets.</span></div><div className="inbox-decisions"><button onClick={() => onOffer(item.id, "decline")}>Decline</button><button className="accept" onClick={() => onOffer(item.id, "accept")}>Accept offer</button></div></article>)}{transfers.length + shareOffers.length === 0 && <div className="empty-inbox"><Inbox size={32} /><strong>Your inbox is clear</strong><span>Incoming transactions and private share offers appear here.</span></div>}</div></ModalShell>;
+}
+
+function JoeBankModal({ availableCents, onClose, onPortfolioChange }: { availableCents: number; onClose: () => void; onPortfolioChange: () => Promise<void> }) {
+  const [bank, setBank] = useState<JoeBankSnapshot | null>(null);
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [repayment, setRepayment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const reload = useCallback(async () => { setBank(await loadJoeBank()); }, []);
+  useEffect(() => { void reload().catch((error) => setMessage(error instanceof Error ? error.message : "Joe Bank is unavailable.")); }, [reload]);
+  const offered = bank?.loans.find((loan) => loan.stage === "offered");
+  const awaiting = bank?.loans.find((loan) => loan.stage === "awaiting_review");
+  const active = bank?.loans.find((loan) => loan.stage === "active");
+  const applicationCents = Math.round(Number(amount) * 100);
+  const repaymentCents = Math.round(Number(repayment) * 100);
+  const run = async (action: () => Promise<void>, success: string) => {
+    setBusy(true); setMessage("");
+    try { await action(); await Promise.all([reload(), onPortfolioChange()]); setMessage(success); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Joe Bank could not complete that request."); }
+    finally { setBusy(false); }
+  };
+  return <ModalShell title="Joe Bank" eyebrow="SIMULATED RECOVERY LENDING" onClose={onClose}>
+    {!bank ? <div className="bank-loading"><RefreshCw size={18} /> Loading account status…</div> : <>
+      <div className="bank-status-row"><div><span>Financial classification</span><strong className={bank.financialStatus === "bankrupt" ? "negative" : "positive"}>{bank.financialStatus === "bankrupt" ? "Bankrupt — confirmed" : "Normal"}</strong></div><div><span>Application limit</span><strong>{formatJoellars(bank.maxLoanCents)}</strong></div></div>
+      <div className="bank-disclosure"><ShieldCheck size={17}/><p>{bank.disclosure}</p></div>
+      {awaiting && <section className="bank-panel"><span className="eyebrow">UNDER REVIEW</span><h3>{formatJoellars(awaiting.principalCents)} requested</h3><p>Joe Bank has not offered terms yet. You may withdraw this application at any time.</p><button className="bank-secondary" disabled={busy} onClick={() => void run(() => decideJoeBankOffer(awaiting.id, "decline"), "Application withdrawn.")}>Withdraw application</button></section>}
+      {offered && <section className="bank-panel offered"><span className="eyebrow">TERMS READY</span><div className="bank-offer-grid"><div><small>Loan amount</small><strong>{formatJoellars(offered.principalCents)}</strong></div><div><small>Variable APR</small><strong>{(offered.annualRateBps / 100).toFixed(2)}%</strong></div></div><p>{offered.decisionNote || "Joe Bank has offered these terms."}</p><div className="bank-decisions"><button disabled={busy} onClick={() => void run(() => decideJoeBankOffer(offered.id, "decline"), "Loan offer declined.")}>Decline</button><button className="accept" disabled={busy} onClick={() => void run(() => decideJoeBankOffer(offered.id, "accept"), "Loan accepted and added to disposable balance.")}>Accept terms</button></div></section>}
+      {active && <section className="bank-panel active"><span className="eyebrow">ACTIVE LIABILITY</span><div className="bank-offer-grid"><div><small>Outstanding</small><strong>{formatJoellars(active.outstandingCents)}</strong></div><div><small>Variable APR</small><strong>{(active.annualRateBps / 100).toFixed(2)}%</strong></div></div><label className="form-field"><span>Repay from disposable J$</span><div className="money-input"><b>J$</b><input value={repayment} onChange={(event) => setRepayment(event.target.value)} inputMode="decimal" placeholder="0.00" /></div><small>Disposable now: {formatJoellars(availableCents)}</small></label><button className="modal-submit" disabled={busy || repaymentCents <= 0 || repaymentCents > active.outstandingCents || repaymentCents > availableCents} onClick={() => void run(() => repayJoeBankLoan(active.id, repaymentCents), "Repayment recorded." )}>{busy ? "Recording…" : "Make repayment"}</button></section>}
+      {bank.canApply && <section className="bank-panel"><span className="eyebrow">NEW APPLICATION</span><h3>Request recovery funds</h3><p>An operator will review the request and offer a rate. No J$ is credited until you accept the terms.</p><label className="form-field"><span>Requested amount</span><div className="money-input"><b>J$</b><input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="0.00" /></div></label><label className="form-field"><span>Reason for request</span><textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} placeholder="Explain why recovery support is needed…" /></label><button className="modal-submit" disabled={busy || applicationCents <= 0 || applicationCents > bank.maxLoanCents || note.trim().length < 10} onClick={() => void run(async () => { await applyForJoeBankLoan(applicationCents, note); setAmount(""); setNote(""); }, "Application sent to Joe Bank.")}>{busy ? "Submitting…" : "Submit application"}</button></section>}
+      {!bank.canApply && !awaiting && !offered && !active && bank.financialStatus !== "bankrupt" && <div className="bank-ineligible"><Landmark size={22}/><strong>No borrowing access</strong><span>Joe Bank applications become available only after an operator formally confirms bankruptcy.</span></div>}
+      {bank.loans.length > 0 && <section className="bank-history"><h3>Loan history</h3>{bank.loans.map((loan) => <div key={loan.id}><span><strong>{formatJoellars(loan.principalCents)}</strong><small>{new Date(loan.requestedAt).toLocaleDateString()}</small></span><b className={`status-tag ${loan.stage}`}>{loan.stage.replaceAll("_", " ")}</b></div>)}</section>}
+    </>}
+    {message && <div className="auth-message bank-message">{message}</div>}
+  </ModalShell>;
 }
 

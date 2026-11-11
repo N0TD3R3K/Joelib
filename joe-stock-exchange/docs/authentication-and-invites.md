@@ -66,8 +66,8 @@ portfolio, or execute trades until it has completed verification.
 ## Passwords, sessions, and recovery
 
 JOESE uses email-and-password sign-in after initial verification. Email is used
-for verification; a reviewed password-recovery flow remains a public-launch
-requirement and is not silently approximated by an operator password change.
+for verification and a neutral password-recovery flow; an operator cannot
+silently replace a member's password.
 
 - Passwords are stored with PBKDF2-SHA-256, a unique 16-byte salt, 210,000
   iterations, and a 256-bit result. No password or reversible encryption key
@@ -77,15 +77,15 @@ requirement and is not silently approximated by an operator password change.
   status and role.
 - Session renewal, logout, password reset, email verification, role changes,
   and account disablement must invalidate or re-evaluate affected sessions.
-- Password-reset messages must use short-lived, single-use, server-stored or
-  securely verifiable tokens and neutral account-enumeration-resistant responses.
+- Password-reset messages use 15-minute, single-use, server-hashed tokens and
+  neutral account-enumeration-resistant responses. Completing a reset revokes
+  every existing session for the account.
 - The product must provide a documented account-disable and session-revocation
   path for administrators.
 
 Sessions use random 32-byte bearer tokens, store only a secret-peppered SHA-256
-digest in D1, and expire after 30 days. Recovery-token storage, recovery UX,
-and authentication-record retention still require a reviewed implementation
-before public membership opens.
+digest in D1, and expire after 30 days. Authentication-record retention still
+requires a reviewed production policy before public membership opens.
 
 ## Email delivery
 
@@ -100,10 +100,10 @@ details beyond what is necessary for the requested action.
 
 ## Abuse prevention
 
-Signup and login use Cloudflare Turnstile with server-side validation. The
-future password-reset flow must use the same protection. Cloudflare rate limits
-must be configured by account identifier and network signal as appropriate;
-public responses avoid revealing account existence.
+Signup, login, password-reset request, and password-reset completion use
+Cloudflare Turnstile with server-side validation. Cloudflare rate limits must be
+configured by account identifier and network signal as appropriate; public
+responses avoid revealing account existence.
 
 If passwordless links are later added, they are optional and must meet these
 limits:

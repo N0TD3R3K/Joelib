@@ -94,6 +94,14 @@ export async function matchOpenOrders(
 
     const statements: D1PreparedStatement[] = [
       db.prepare(
+        `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+         VALUES ('order', ?, ?, 'fill', ?)`,
+      ).bind(match.buy_id, String(match.buy_remaining), match.buy_user_id),
+      db.prepare(
+        `INSERT INTO state_transition_locks (entity_type, entity_id, version_key, action, actor_id)
+         VALUES ('order', ?, ?, 'fill', ?)`,
+      ).bind(match.sell_id, String(match.sell_remaining), match.sell_user_id),
+      db.prepare(
         `UPDATE orders
             SET remaining_quantity = ?, reserved_cash_cents = ?, status = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ? AND remaining_quantity = ? AND status IN ('open', 'partially_filled')`,
@@ -145,18 +153,18 @@ export async function matchOpenOrders(
       ),
     ];
     if (buyerRefundCents > 0) {
-      statements.splice(4, 0, db.prepare(
+      statements.splice(6, 0, db.prepare(
         "UPDATE users SET disposable_balance_cents = disposable_balance_cents + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       ).bind(buyerRefundCents, match.buy_user_id));
     }
     if (buyerHolding) {
-      statements.splice(3, 0, db.prepare(
+      statements.splice(5, 0, db.prepare(
         `UPDATE holdings
             SET quantity = quantity + ?, average_cost_cents = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?`,
       ).bind(quantity, buyerAverageCostCents, buyerHoldingId));
     } else {
-      statements.splice(3, 0, db.prepare(
+      statements.splice(5, 0, db.prepare(
         `INSERT INTO holdings (id, user_id, asset_id, holding_kind, quantity, average_cost_cents)
          VALUES (?, ?, ?, ?, ?, ?)`,
       ).bind(buyerHoldingId, match.buy_user_id, asset.id, holdingKind, quantity, buyerAverageCostCents));

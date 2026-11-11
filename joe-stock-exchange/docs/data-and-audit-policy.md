@@ -16,6 +16,15 @@ edit or deletion.
 
 Pending orders, transfers, and offers may change status according to published
 rules. Their original amount, parties, and creation time remain auditable.
+Each resolution also acquires a unique state-transition lock. Competing accept,
+decline, cancel, fill, or delisting actions therefore cannot settle the same
+reserved J$ or asset quantity twice.
+
+Joe Bank additionally records the member's formal financial classification,
+application, offered terms, member acceptance or decline, rate changes, daily
+interest accruals, and repayments. The legacy `borrowed_principal_cents` user
+column is the cached current liability total, including capitalized interest;
+the loan and accrual tables remain the reconciliation source of truth.
 
 ## Operations audit
 

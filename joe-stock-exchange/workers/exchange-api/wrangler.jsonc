@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-11-11",
   "upload_source_maps": true,
-  "workers_dev": true,
+  "workers_dev": false,
   "routes": [
     { "pattern": "api.joese.derekli.dev", "custom_domain": true }
   ],
@@ -14,7 +14,10 @@
     "ALLOWED_ORIGINS": "https://joese.derekli.dev,https://console.joese.derekli.dev",
     "REQUIRE_INVITE": "true",
     "ENFORCE_TRADING_SCHEDULE": "true",
-    "RESEND_FROM_EMAIL": "JOESE <noreply@joese.derekli.dev>"
+    "RESEND_FROM_EMAIL": "JOESE <noreply@joese.derekli.dev>",
+    "JOE_BANK_MAX_LOAN_CENTS": "1000000",
+    "JOE_BANK_DEFAULT_RATE_BPS": "800",
+    "JOE_BANK_MAX_RATE_BPS": "5000"
   },
   "d1_databases": [
     {

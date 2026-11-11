@@ -12,7 +12,7 @@ export async function verifyTurnstile(
   request: Request,
   env: Env,
   token: string | undefined,
-  expectedAction: "login" | "register",
+  expectedAction: "login" | "register" | "recovery",
 ): Promise<void> {
   if (!env.TURNSTILE_SECRET_KEY && env.ENVIRONMENT !== "production") return;
   if (!env.TURNSTILE_SECRET_KEY) {

@@ -27,6 +27,16 @@ paths:
       summary: Create a secure HttpOnly session
       responses:
         "200": { description: Signed in }
+  /auth/request-password-reset:
+    post:
+      summary: Request a neutral, short-lived password-reset email
+      responses:
+        "200": { description: Neutral response returned }
+  /auth/reset-password:
+    post:
+      summary: Consume a one-use reset token and revoke existing sessions
+      responses:
+        "200": { description: Password reset }
   /me/portfolio:
     get:
       summary: Read balances and ordered holding groups
@@ -68,6 +78,14 @@ paths:
         - { name: action, in: path, required: true, schema: { type: string, enum: [accept, decline] } }
       responses:
         "200": { description: Transfer resolved }
+  /transfers/{id}/cancel:
+    post:
+      summary: Sender cancels a pending transfer and receives the reservation back
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Transfer cancelled }
   /share-offers:
     post:
       summary: Seller offers frozen shares to a named buyer
@@ -84,6 +102,43 @@ paths:
         - { name: action, in: path, required: true, schema: { type: string, enum: [accept, decline] } }
       responses:
         "200": { description: Share offer resolved }
+  /share-offers/{id}/cancel:
+    post:
+      summary: Seller cancels a pending frozen-share offer
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Share offer cancelled }
+  /joe-bank:
+    get:
+      summary: Read bankruptcy classification, disclosed policy, and loan history
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Joe Bank account }
+  /joe-bank/applications:
+    post:
+      summary: Apply after formal bankruptcy confirmation
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Application queued for operator review }
+  /joe-bank/loans/{id}/{action}:
+    post:
+      summary: Accept disclosed terms or decline or withdraw an application
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: action, in: path, required: true, schema: { type: string, enum: [accept, decline] } }
+      responses:
+        "200": { description: Member decision recorded }
+  /joe-bank/loans/{id}/repay:
+    post:
+      summary: Repay an active liability from disposable J$
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Repayment recorded }
   /console/assets:
     get:
       summary: List all assets for the operations console
@@ -127,6 +182,28 @@ paths:
       security: [{ sessionCookie: [] }]
       responses:
         "200": { description: Account list }
+  /console/members/{id}/financial-status:
+    patch:
+      summary: Classify a member as normal or bankrupt with an audited reason
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Classification saved }
+  /console/loans:
+    get:
+      summary: List Joe Bank applications and liabilities
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Loan list }
+  /console/loans/{id}:
+    patch:
+      summary: Offer or decline terms, or change an active variable rate
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Loan updated }
   /console/market:
     get:
       summary: Read recent market ticks and order totals

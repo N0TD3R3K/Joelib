@@ -1,12 +1,14 @@
 import { ArrowRight, KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import { useState } from "react";
-import { login, register } from "../../api";
+import { login, register, requestPasswordReset, resetPassword } from "../../api";
 import { TurnstileWidget, turnstileEnabled } from "./TurnstileWidget";
 
 interface Props { onAuthenticated: () => Promise<void>; initialMessage?: string | null; }
+type AuthMode = "login" | "register" | "recovery" | "reset";
 
 export function AuthScreen({ onAuthenticated, initialMessage }: Props) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const resetToken = new URLSearchParams(window.location.search).get("token") ?? "";
+  const [mode, setMode] = useState<AuthMode>(window.location.pathname === "/reset-password" && resetToken ? "reset" : "login");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -20,9 +22,26 @@ export function AuthScreen({ onAuthenticated, initialMessage }: Props) {
       if (mode === "login") {
         await login(email, password, turnstileToken);
         await onAuthenticated();
-      } else {
+      } else if (mode === "register") {
         const result = await register({ email, username, password, inviteCode, turnstileToken });
         setMessage(result.developmentVerificationToken ? `Development verification token: ${result.developmentVerificationToken}` : "Check your school email to verify the account.");
+      } else if (mode === "recovery") {
+        const result = await requestPasswordReset(email, turnstileToken);
+        if (result.developmentResetToken) {
+          window.history.replaceState({}, "", `/reset-password?token=${encodeURIComponent(result.developmentResetToken)}`);
+          setMode("reset");
+          setTurnstileToken("");
+          setMessage("Development reset link opened. Choose a new password.");
+        } else {
+          setMessage(result.message);
+        }
+      } else {
+        await resetPassword(resetToken, password, turnstileToken);
+        window.history.replaceState({}, "", "/");
+        setMode("login");
+        setPassword("");
+        setTurnstileToken("");
+        setMessage("Password reset. Sign in with your new password.");
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Authentication failed");
@@ -37,15 +56,16 @@ export function AuthScreen({ onAuthenticated, initialMessage }: Props) {
       </section>
       <section className="auth-form-wrap">
         <div className="auth-form">
-          <span className="eyebrow">MEMBER ACCESS</span><h2>{mode === "login" ? "Welcome back" : "Create one account"}</h2><p>{mode === "login" ? "Sign in to continue to the exchange." : "Use your eligible school email and invitation."}</p>
+          <span className="eyebrow">MEMBER ACCESS</span><h2>{mode === "login" ? "Welcome back" : mode === "register" ? "Create one account" : mode === "recovery" ? "Recover your account" : "Choose a new password"}</h2><p>{mode === "login" ? "Sign in to continue to the exchange." : mode === "register" ? "Use your eligible school email and invitation." : mode === "recovery" ? "We will send a 15-minute, one-use link if the account exists." : "The reset link works once and signs out every existing session."}</p>
           <div className="auth-tabs"><button className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setTurnstileToken(""); }}>Sign in</button><button className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setTurnstileToken(""); }}>Register</button></div>
           {mode === "register" && <label className="form-field"><span>Username</span><input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" /></label>}
-          <label className="form-field"><span>School email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" /></label>
-          <label className="form-field"><span>Password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>
+          {mode !== "reset" && <label className="form-field"><span>School email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" /></label>}
+          {mode !== "recovery" && <label className="form-field"><span>{mode === "reset" ? "New password" : "Password"}</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>}
+          {mode === "login" && <button className="auth-link" onClick={() => { setMode("recovery"); setTurnstileToken(""); setMessage(""); }}>Forgot password?</button>}
           {mode === "register" && <label className="form-field"><span>6-Digit Invite Code</span><input value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} placeholder="Paste your Joe invitation phrase" /></label>}
-          <TurnstileWidget key={mode} action={mode} onToken={setTurnstileToken} />
+          <TurnstileWidget key={mode} action={mode === "login" || mode === "register" ? mode : "recovery"} onToken={setTurnstileToken} />
           {message && <div className="auth-message">{message}</div>}
-          <button className="auth-submit" onClick={submit} disabled={busy || (turnstileEnabled && !turnstileToken)}>{busy ? "Working…" : mode === "login" ? "Enter exchange" : "Create account"}<ArrowRight size={18} /></button>
+          <button className="auth-submit" onClick={submit} disabled={busy || (turnstileEnabled && !turnstileToken)}>{busy ? "Working…" : mode === "login" ? "Enter exchange" : mode === "register" ? "Create account" : mode === "recovery" ? "Send reset link" : "Reset password"}<ArrowRight size={18} /></button>
           <small className="auth-legal">JOESE is a fictional simulation. No real-money deposits, withdrawals, or cash-outs.</small>
         </div>
       </section>

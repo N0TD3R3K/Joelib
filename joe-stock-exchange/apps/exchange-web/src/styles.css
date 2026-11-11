@@ -69,7 +69,7 @@ input:focus, textarea:focus, select:focus { border-color: rgba(242, 191, 86, .62
 .price-heading { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .price-heading strong { font-variant-numeric: tabular-nums; font-size: clamp(25px,3vw,36px); letter-spacing: -.035em; }
 .price-heading span { display: flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 750; }
-.market-stat-strip { display: grid; grid-template-columns: repeat(5,1fr); margin-top: 23px; border: 1px solid var(--line-soft); border-radius: 11px; background: rgba(15,18,23,.65); }
+.market-stat-strip { display: grid; grid-template-columns: repeat(6,1fr); margin-top: 23px; border: 1px solid var(--line-soft); border-radius: 11px; background: rgba(15,18,23,.65); }
 .market-stat-strip > div { display: flex; flex-direction: column; gap: 5px; padding: 11px 15px; border-right: 1px solid var(--line-soft); }
 .market-stat-strip > div:last-child { border: 0; }
 .market-stat-strip span { color: var(--muted); font-size: 9px; }
@@ -164,6 +164,8 @@ input:focus, textarea:focus, select:focus { border-color: rgba(242, 191, 86, .62
 .inbox-button b { position: absolute; top: -4px; right: -3px; display: grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; color: #15110a; background: var(--accent); font-size: 7px; }
 .wealth-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .wealth-card { min-width: 0; padding: 11px; border: 1px solid var(--line-soft); border-radius: 10px; background: #10141a; }
+.wealth-card.actionable { color: var(--text); text-align: left; }
+.wealth-card.actionable:hover { border-color: rgba(255,101,119,.3); background: #141820; transform: translateY(-1px); }
 .wealth-card > div { display: flex; justify-content: space-between; align-items: center; color: var(--muted); }
 .wealth-card span { font-size: 8px; }
 .wealth-card strong { display: block; overflow: hidden; margin-top: 8px; font-size: 14px; letter-spacing: -.02em; text-overflow: ellipsis; }
@@ -219,6 +221,25 @@ input:focus, textarea:focus, select:focus { border-color: rgba(242, 191, 86, .62
 .inbox-decisions .accept { color: #b9f2de; border-color: rgba(56,211,159,.2); background: rgba(56,211,159,.08); }
 .empty-inbox { display: grid; justify-items: center; gap: 7px; padding: 42px 20px; color: var(--dim); text-align: center; }
 .empty-inbox strong { color: var(--text); font-size: 12px; }.empty-inbox span { font-size: 9px; }
+.bank-loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 42px; color: var(--muted); font-size: 10px; }
+.bank-loading svg { color: var(--accent); animation: bank-spin 1s linear infinite; }
+@keyframes bank-spin { to { transform: rotate(360deg); } }
+.bank-status-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.bank-status-row > div { display: flex; flex-direction: column; gap: 5px; padding: 11px; border: 1px solid var(--line-soft); border-radius: 9px; background: #0d1116; }
+.bank-status-row span, .bank-offer-grid small { color: var(--dim); font-size: 8px; }
+.bank-status-row strong { font-size: 11px; text-transform: capitalize; }
+.bank-disclosure { display: grid; grid-template-columns: auto 1fr; gap: 9px; margin-bottom: 10px; padding: 11px; border: 1px solid rgba(108,169,255,.15); border-radius: 9px; color: var(--info); background: rgba(108,169,255,.04); }
+.bank-disclosure p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.55; }
+.bank-panel { margin-top: 10px; padding: 14px; border: 1px solid var(--line-soft); border-radius: 10px; background: #0d1116; }
+.bank-panel.offered { border-color: rgba(242,191,86,.25); }.bank-panel.active { border-color: rgba(255,101,119,.2); }
+.bank-panel h3 { margin: 5px 0 7px; font-size: 14px; }.bank-panel > p { margin: 5px 0 13px; color: var(--muted); font-size: 9px; line-height: 1.55; }
+.bank-secondary { padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); font-size: 8px; }
+.bank-offer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 8px 0; }
+.bank-offer-grid > div { display: flex; flex-direction: column; gap: 4px; padding: 10px; border-radius: 8px; background: #131820; }.bank-offer-grid strong { font-size: 13px; }
+.bank-decisions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }.bank-decisions button { padding: 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 9px; }.bank-decisions .accept { color: #10140f; border: 0; background: linear-gradient(135deg,var(--accent-strong),var(--accent)); font-weight: 850; }
+.bank-ineligible { display: grid; justify-items: center; gap: 7px; padding: 28px 18px; color: var(--dim); text-align: center; }.bank-ineligible strong { color: var(--text); font-size: 11px; }.bank-ineligible span { max-width: 330px; font-size: 8px; line-height: 1.5; }
+.bank-history { margin-top: 14px; border-top: 1px solid var(--line-soft); }.bank-history h3 { margin: 13px 0 6px; font-size: 10px; }.bank-history > div { display: flex; align-items: center; justify-content: space-between; padding: 8px 2px; border-bottom: 1px solid var(--line-soft); }.bank-history > div > span { display: flex; flex-direction: column; gap: 2px; }.bank-history strong { font-size: 9px; }.bank-history small { color: var(--dim); font-size: 7px; }.bank-history .status-tag { color: var(--muted); font-size: 7px; text-transform: uppercase; }
+.bank-message { margin-bottom: 0; }
 .toast { position: fixed; z-index: 80; right: 26px; bottom: 24px; padding: 11px 15px; border: 1px solid rgba(56,211,159,.2); border-radius: 9px; color: #cbf8e8; background: #10221c; box-shadow: var(--shadow); font-size: 10px; animation: toast-in .22s ease; }
 @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } }
 
@@ -248,6 +269,7 @@ input:focus, textarea:focus, select:focus { border-color: rgba(242, 191, 86, .62
 .auth-form { width: min(390px,100%); }.auth-form h2 { margin: 6px 0; font-size: 27px; }.auth-form > p { margin: 0 0 20px; color: var(--muted); font-size: 10px; }
 .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 18px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: #080a0d; }
 .auth-tabs button { padding: 8px; border-radius: 6px; color: var(--muted); font-size: 10px; }.auth-tabs button.active { color: var(--text); background: #1b2028; }
+.auth-link { display: block; margin: -3px 0 10px auto; color: var(--accent); font-size: 9px; background: transparent; }
 .auth-message { margin: 12px 0; padding: 10px; border: 1px solid rgba(242,191,86,.18); border-radius: 8px; color: #dfc78e; background: rgba(242,191,86,.05); font-size: 9px; line-height: 1.5; word-break: break-all; }
 .turnstile-wrap { min-height: 65px; margin-top: 14px; }
 .auth-submit { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 16px; }.auth-submit:disabled { opacity: .5; }
@@ -269,7 +291,7 @@ input:focus, textarea:focus, select:focus { border-color: rgba(242, 191, 86, .62
   .market-stat-strip { grid-template-columns: repeat(2,1fr); }.market-stat-strip > div:nth-child(even) { border-right: 0; }.market-stat-strip > div { border-bottom: 1px solid var(--line-soft); }
   .chart-card { padding-inline: 12px; }.chart-toolbar { align-items: flex-start; gap: 10px; }.segmented button { min-width: 30px; padding-inline: 5px; }.chart-range { display: none; }
   .company-facts, .color-setting-grid { grid-template-columns: 1fr; }.feed-heading { align-items: flex-start; gap: 12px; }.segmented.compact button { font-size: 0; }.segmented.compact svg { margin: 0; }
-  .form-split { grid-template-columns: 1fr; }.inbox-item { grid-template-columns: 36px 1fr; }.inbox-decisions { grid-column: 1/-1; justify-content: flex-end; }
+  .form-split, .bank-status-row, .bank-offer-grid { grid-template-columns: 1fr; }.inbox-item { grid-template-columns: 36px 1fr; }.inbox-decisions { grid-column: 1/-1; justify-content: flex-end; }
   .auth-page { display: block; }.auth-story { min-height: 360px; padding: 30px; }.auth-story h1 { font-size: 44px; }.auth-principles { display: none; }.auth-form-wrap { padding-block: 48px; }
   .settings-shell { padding-top: 35px; }
 }
