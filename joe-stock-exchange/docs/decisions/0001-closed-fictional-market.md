@@ -1,6 +1,6 @@
 # ADR 0001: JOESE is a closed fictional market
 
-- **Status:** Accepted
+- **Status:** Accepted — amended 2026-11-11
 - **Date:** 2026-11-10
 - **Decision owners:** JOESE project team
 
@@ -28,11 +28,13 @@ simulation**.
 - Every asset is a fictional Joe Universe listing. It does not represent real
   ownership, a real investment, an affiliation, an endorsement, or a claim
   about any similarly named person, project, company, token, or organization.
-- Version 1 excludes leverage, margin, loans, short selling, derivatives,
-  prizes based on J$ value, and every other mechanism that gives simulated
-  balances external value.
-- Membership is verified and invitation-only. The product is not a public
-  brokerage, trading venue, wallet, or payment service.
+- Version 1 excludes leverage, margin, short selling, derivatives, prizes based
+  on J$ value, and every other mechanism that gives simulated balances external
+  value. The limited Joe Bank bankruptcy loan is an internal simulated J$
+  liability; it is neither real-world credit nor a value-redemption route.
+- Membership is limited to one verified account per person using an approved
+  school email domain. The product is not a public brokerage, trading venue,
+  wallet, or payment service.
 
 The member interface, documentation, transactional messages, and Operations
 Console will make this boundary clear. Any future feature proposal must preserve
@@ -52,7 +54,8 @@ it or require a new, explicit architectural decision before implementation.
 ### Constraints
 
 - JOESE must reject all real-money integrations, wallet features, deposits,
-  withdrawals, cash-outs, gifts, and member-to-member balance transfers.
+  withdrawals, and cash-outs. Internal J$ transactions settle only after the
+  named receiver accepts them; a matched fictional-asset sale is also permitted.
 - Product copy must avoid language or UI that implies investment advice,
   financial return, ownership, or real-world value.
 - A fictional listing that resembles a real name requires a clear JOESE
@@ -65,7 +68,9 @@ it or require a new, explicit architectural decision before implementation.
 Before a release, confirm that:
 
 1. no payment processor, real-money wallet, or value-redemption flow is present;
-2. no endpoint supports deposits, withdrawals, peer transfers, or cash-out;
+2. no endpoint supports real-money deposits, withdrawals, or cash-out; internal
+   transfers require receiver acceptance, and Joe Bank loans remain internal J$
+   bankruptcy loans with an auditable rate and liability;
 3. all member-facing surfaces label JOESE as a fictional simulation;
 4. the asset catalog uses the listing disclaimer; and
 5. trade and ledger tests enforce the Version 1 feature exclusions.

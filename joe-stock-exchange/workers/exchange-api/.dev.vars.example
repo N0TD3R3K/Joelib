@@ -1,0 +1,7 @@
+ENVIRONMENT=development
+ENFORCE_TRADING_SCHEDULE=false
+SESSION_SECRET=replace-with-a-long-random-local-secret
+INTERNAL_API_KEY=replace-with-a-different-long-random-local-secret
+RESEND_API_KEY=
+TURNSTILE_SECRET_KEY=
+

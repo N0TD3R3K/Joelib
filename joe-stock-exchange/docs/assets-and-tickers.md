@@ -15,6 +15,32 @@ Stocks trade in whole shares. Crypto-assets trade to two decimal places. All
 listed assets use the market schedule, quote rules, price caps, and audit rules
 in [market-rules.md](market-rules.md).
 
+## Project companies and shareholder assets
+
+When a developer releases a new project, the developer may ask to list it as a
+fictional public company in JOESE. The developer is recorded as that company's
+main shareholder. The developer and the other shareholders must together turn a
+minimum of **J$5,000** into assets of the new stock listing before it opens.
+
+Those shares are portfolio assets, not disposable J$. Their displayed value
+does not give their holder additional buying power. A shareholder who wants to
+recover disposable balance must sell shares to a willing buyer through an
+eligible exchange trade; JOESE does not automatically buy, redeem, or cash out
+the assets.
+
+The shareholder must initiate the frozen-share offer and name its intended
+buyer. A buyer may accept or decline that private inbox offer but cannot apply
+to purchase another member's frozen assets.
+
+Every active listing also declares a finite public float. The initial reference
+listings seed that float in a suspended, non-human issuance account; a new
+project listing defaults to a public float equal to 25% of its founding share
+count unless the operator supplies a reviewed smaller amount. The issuance
+account may sell that reserved inventory at the published ask but never buys
+assets back. Once the float is sold, further purchases require a member seller.
+This creates initial availability without turning JOESE into an automatic
+redemption counterparty.
+
 ## Fictional equities
 
 | Ticker | Listing | Fictional Joe Universe role |
@@ -51,11 +77,14 @@ Each listing must have a versioned configuration record with, at minimum:
 - hard hourly and daily limits appropriate to its type;
 - demand-normalization configuration and any asset-specific cap;
 - permitted Joe Wire categories and related lore notes; and
-- activation date, retirement/suspension status, and change history.
+- activation date, retirement/suspension status, and change history;
+- for a project company: developer/main shareholder, shareholder allocations,
+  combined founding contribution, and issuance audit record; and
+- the three-consecutive-closes-below-J$1.00 delisting counter for stock listings.
 
-Initial prices and engine profiles are intentionally not chosen in this document.
-They must be reviewed as a coherent starting market before member accounts are
-funded or trading opens.
+The reference seed supplies the initial prices and engine profiles. Operators
+must review them as a coherent starting market in staging before member
+accounts are funded or production trading opens.
 
 ## Listing governance
 
@@ -64,6 +93,11 @@ listing requires an attributed Operations Console action, an audit record, a
 member-facing notice, and a versioned asset configuration. A delisted asset's
 historical trades, prices, Joe Wire references, and ledger entries remain
 available for audit.
+
+For a stock listing, three consecutive official daily closes below J$1.00 cause
+automatic removal. Its remaining shareholder and member assets are then worth
+J$0.00, open orders are cancelled, and the listing cannot be sold or bought.
+The removal does not erase its history or create a J$ reimbursement.
 
 No listing change may create an undisclosed balance change or an unpublished
 price change. If a future simulation event needs to adjust positions or asset

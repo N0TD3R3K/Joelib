@@ -31,16 +31,21 @@ use them before the product is ready.
 
 ## Version 1 goals
 
-- Give every verified member the same J$10,000 starting balance and a clear,
-  understandable set of fictional assets.
+- Give every verified member one account with the same J$10,000 starting
+  **disposable balance** and a clear, understandable set of fictional assets.
 - Run a predictable hourly market in the `America/New_York` time zone, with
   official updates from 2:00 PM through the 10:00 PM close.
 - Let members buy and sell according to published bid, ask, fee, quantity, and
   market-lock rules.
+- Let a member propose a J$ transaction to another account; the transfer settles
+  only when the named receiver chooses **Receive** in their inbox.
 - Make price movement legible: it comes from ordinary asset behavior, shared
   market mood, published Joe Wire events, and aggregate prior demand.
 - Preserve a permanent, reviewable ledger of trades, fees, prices, balances,
   market updates, and operations activity.
+- Let a developer make a newly released project into a listed fictional company,
+  with the developer recorded as its main shareholder and its shareholders
+  contributing at least J$5,000 in combined listing assets.
 - Make the Operations Console accountable: every market-relevant event is
   structured, scheduled, attributable, and visible to members.
 
@@ -50,8 +55,8 @@ JOESE deliberately does **not** include:
 
 - real-money payments, deposits, withdrawals, cash-outs, prizes, or conversion
   of J$ into anything of value;
-- leverage, margin, loans, short selling, options, derivatives, or member-to-
-  member transfers;
+- leverage, margin, short selling, options, derivatives, or unilateral transfers
+  that settle without the named receiver's acceptance;
 - instant price changes triggered by individual trades;
 - hidden price overrides or unpublished market-moving operator actions;
 - anonymous public trading accounts; or
@@ -82,10 +87,19 @@ Balances and positions are consequences of an append-only record of events and
 trades. A correction must be a separately attributed correction, never a
 silent rewrite of history.
 
+### Assets are not disposable balance
+
+When a member uses disposable J$ to buy shares, that amount becomes an asset in
+their portfolio. It may have a displayed market value, but it is not spending
+money. It becomes disposable J$ again only after a buyer takes the asset through
+an eligible trade; JOESE does not automatically redeem it.
+
 ### Membership is intentional
 
-JOESE is invitation-only. Registration, email verification, password handling,
-and role boundaries are part of the product—not an afterthought.
+JOESE is limited to one verified account per person, using an approved school
+email domain. Registration, any invitation eligibility check, school-email
+verification, password handling, and role boundaries are part of the
+product—not an afterthought.
 
 ### Lore supports, but does not bypass, the market
 
@@ -95,20 +109,19 @@ protect the simulation's fairness.
 
 ## Definition of a successful first release
 
-A small invited group can create and verify accounts, receive their starting
-J$ balance, inspect the market and Joe Wire, trade eligible assets during an
-open session, and later reconcile every displayed balance and price to recorded
-trades, published events, and scheduled market updates. An operator can create
-and schedule a bulletin but cannot use the console to secretly move a price or
-trade the market.
+A small, school-email-verified group can create one account each, receive its
+J$10,000 disposable starting balance, inspect the market and Joe Wire, trade
+eligible assets during an open session, and later reconcile every displayed
+balance, asset, and price to recorded trades, published events, and scheduled
+market updates. A project developer can launch an eligible fictional company
+with shareholders, and an operator can create and schedule a bulletin but
+cannot use the console to secretly move a price or trade the market.
 
-## Decisions still required before implementation
+## Decisions still required before public launch
 
-- Exact trading-open and trading-close behavior outside the hourly update
-  window, including weekends and holidays.
-- Initial reference prices, drift/volatility profiles, and demand-normalization
-  values for each asset.
-- The production database, deployment topology, and backup/retention plan.
-- The exact member-invitation issuance and approval workflow.
+- The production D1 backup/retention plan and named incident owner.
+- The final school-domain allowlist and duplicate-person account review process.
+- The objective bankruptcy criteria, Joe Bank repayment rules, and how its
+  variable interest rates are published and applied.
 - Whether a daily integrity hash and post-close reveal of generated market
   conditions will ship in Version 1 or a later release.

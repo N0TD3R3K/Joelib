@@ -1,0 +1,24 @@
+{
+  "name": "@joese/exchange-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4173",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "deploy": "node ../../scripts/check-production-env.mjs && npm run build && wrangler deploy --config wrangler.jsonc"
+  },
+  "dependencies": {
+    "@joese/contracts": "*",
+    "@joese/ui": "*",
+    "lucide-react": "^1.70.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0"
+  }
+}
+

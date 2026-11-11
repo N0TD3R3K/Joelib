@@ -1,0 +1,154 @@
+openapi: 3.1.0
+info:
+  title: JOE Stock Exchange API
+  version: 0.1.0
+  description: Role-protected API for the closed fictional JOESE market and operations console.
+servers:
+  - url: https://api.joese.derekli.dev/v1
+  - url: http://127.0.0.1:8787/v1
+paths:
+  /health:
+    get:
+      summary: Check API and D1 health
+      responses:
+        "200": { description: Healthy }
+  /market/snapshot:
+    get:
+      summary: Read current listings, history, news, and visible comments
+      responses:
+        "200": { description: Current market snapshot }
+  /auth/register:
+    post:
+      summary: Register one eligible school-email account
+      responses:
+        "201": { description: Verification email sent }
+  /auth/login:
+    post:
+      summary: Create a secure HttpOnly session
+      responses:
+        "200": { description: Signed in }
+  /me/portfolio:
+    get:
+      summary: Read balances and ordered holding groups
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Member portfolio }
+  /orders:
+    get:
+      summary: List the signed-in member's orders
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Order history }
+    post:
+      summary: Reserve funds or holdings and place a price-time-matched order
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Order accepted }
+        "423": { description: Market closed or locked }
+  /orders/{id}/cancel:
+    post:
+      summary: Cancel an open order and release its remaining reservation
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Order cancelled }
+  /transfers:
+    post:
+      summary: Send a pending J$ transaction to a named receiver
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Transfer reserved and placed in receiver inbox }
+  /transfers/{id}/{action}:
+    post:
+      summary: Receiver accepts or declines a pending transfer
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: action, in: path, required: true, schema: { type: string, enum: [accept, decline] } }
+      responses:
+        "200": { description: Transfer resolved }
+  /share-offers:
+    post:
+      summary: Seller offers frozen shares to a named buyer
+      description: Buyers intentionally have no endpoint for requesting another member's frozen shares.
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Private share offer created }
+  /share-offers/{id}/{action}:
+    post:
+      summary: Named buyer accepts or declines a private share offer
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: action, in: path, required: true, schema: { type: string, enum: [accept, decline] } }
+      responses:
+        "200": { description: Share offer resolved }
+  /console/assets:
+    get:
+      summary: List all assets for the operations console
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Asset list }
+    post:
+      summary: Launch a shareholder-funded project company
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Listing created }
+  /console/assets/{ticker}:
+    patch:
+      summary: Edit member-visible company details and description
+      description: Price fields cannot be changed through this endpoint.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { name: ticker, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Listing updated }
+  /console/news:
+    get:
+      summary: List all structured Joe Wire events
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Event list }
+    post:
+      summary: Create, schedule, or publish a structured Joe Wire event
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Event created }
+  /console/comments:
+    get:
+      summary: List comments for moderation
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Comment list }
+  /console/members:
+    get:
+      summary: List member and staff accounts
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Account list }
+  /console/market:
+    get:
+      summary: Read recent market ticks and order totals
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Market operations status }
+  /console/audit:
+    get:
+      summary: Read the attributed operator audit log
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Audit entries }
+  /console/invitations:
+    post:
+      summary: Create a limited-use invitation as an administrator
+      security: [{ sessionCookie: [] }]
+      responses:
+        "201": { description: Invitation shown once }
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: joese_session
+

@@ -21,18 +21,26 @@ client-only UI restriction.
 
 ## Registration and verification
 
+An account represents one person. JOESE permits one active member account per
+verified school email address and requires the address to belong to an approved
+school email domain. The domain allowlist is server-side configuration; a
+personal email address cannot be used as a substitute. Suspected duplicate
+accounts must be reviewed and resolved by an administrator with an audit entry.
+
 The intended registration flow is:
 
 1. A prospective member supplies an invitation phrase in the field labeled
    **“6-Digit Invite Code.”** The field accepts a long copy-pasted Joe phrase
    containing letters and numbers; the label is intentionally part of the
    product's tone, not a claim that the phrase is six digits.
-2. The member chooses a display name, email address, and password.
+2. The member chooses a display name, approved school email address, and
+   password.
 3. JOESE verifies that the invitation is valid, available, and eligible for the
-   registration attempt.
-4. JOESE sends a verification email.
-5. After the email is verified, the account is activated and receives the
-   configured J$10,000.00 starting balance exactly once.
+   registration attempt, and that the school email does not already have an
+   active member account.
+4. JOESE sends a verification email to that school address.
+5. After the school email is verified, the account is activated and receives
+   **J$10,000.00 of disposable starting balance** exactly once.
 
 An account must not receive its opening balance, view a trading-enabled
 portfolio, or execute trades until it has completed verification.
@@ -50,14 +58,20 @@ portfolio, or execute trades until it has completed verification.
   revocation, and expiration without storing the plaintext phrase.
 - Rate-limit failed invitation attempts and return neutral error messages that
   do not reveal which phrases or email addresses are valid.
+- Treat a verified school email as the account's unique eligibility identity.
+  An email-address change, duplicate-account exception, or account merge needs
+  an administrator review, member confirmation where possible, and an audit
+  record; it must never issue a second starting balance.
 
 ## Passwords, sessions, and recovery
 
-JOESE uses email-and-password sign-in after initial verification. Email is for
-verification and password recovery, not a requirement for every ordinary login.
+JOESE uses email-and-password sign-in after initial verification. Email is used
+for verification; a reviewed password-recovery flow remains a public-launch
+requirement and is not silently approximated by an operator password change.
 
-- Passwords must be stored only with an approved modern password-hashing
-  strategy; no password or reversible encryption key may be committed or logged.
+- Passwords are stored with PBKDF2-SHA-256, a unique 16-byte salt, 210,000
+  iterations, and a 256-bit result. No password or reversible encryption key
+  may be committed or logged.
 - Sessions use secure, `HttpOnly` cookies with appropriate `Secure` and
   `SameSite` attributes. Server-side session validation must include account
   status and role.
@@ -68,8 +82,10 @@ verification and password recovery, not a requirement for every ordinary login.
 - The product must provide a documented account-disable and session-revocation
   path for administrators.
 
-The exact password-hashing algorithm, session lifetime, recovery-token storage,
-and retention policy must be selected and reviewed before implementation.
+Sessions use random 32-byte bearer tokens, store only a secret-peppered SHA-256
+digest in D1, and expire after 30 days. Recovery-token storage, recovery UX,
+and authentication-record retention still require a reviewed implementation
+before public membership opens.
 
 ## Email delivery
 
@@ -84,10 +100,10 @@ details beyond what is necessary for the requested action.
 
 ## Abuse prevention
 
-Signup, login, and password-reset flows use Cloudflare Turnstile with
-server-side validation. The service must rate-limit by account identifier and
-network signal as appropriate, log security-relevant outcomes, and avoid
-revealing account existence in public responses.
+Signup and login use Cloudflare Turnstile with server-side validation. The
+future password-reset flow must use the same protection. Cloudflare rate limits
+must be configured by account identifier and network signal as appropriate;
+public responses avoid revealing account existence.
 
 If passwordless links are later added, they are optional and must meet these
 limits:
