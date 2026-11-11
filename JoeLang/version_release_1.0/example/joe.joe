@@ -1,0 +1,41 @@
+joebject Joe {
+    has jint height = 1
+    has jint weight = 1
+    has jint age = 1
+    has strjin name = "Joe Jin Himself"
+
+    does getheight() {
+        give height
+    }
+    does getweight() {
+        give weight
+    }
+    does getage() {
+        give age
+    }
+    does getname() {
+        give name
+    }
+}
+
+joebject Compare() {
+    does compare(jint num1, jint num2) {
+        when num1 > num2 {
+            show "fuck joe"
+        }
+        otherwise {
+            when num1 < num2 {
+                show "fuck joe again"
+            }
+            otherwise {
+                show "equal!"
+            }
+        }
+    } 
+}
+
+newjoe Compare as c
+newjoe Joe as joe
+has joe_height = joe.getheight()
+has joe_age = joe.getage()
+c.compare(joe_height, joe_age)
