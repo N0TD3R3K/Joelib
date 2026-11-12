@@ -5,7 +5,7 @@
 | Service | Cloudflare product | Intended address |
 | --- | --- | --- |
 | Member exchange | Worker static assets | `joese.derekli.dev` |
-| Operations console | Worker static assets | `console.joese.derekli.dev` |
+| Operations console | Worker static assets | `joese-console.derekli.dev` |
 | Exchange API | Worker + D1 | `api.joese.derekli.dev` |
 | Market engine | Worker Cron Trigger + D1 | private Worker |
 

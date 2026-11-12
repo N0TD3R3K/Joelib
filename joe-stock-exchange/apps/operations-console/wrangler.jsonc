@@ -4,7 +4,7 @@
   "compatibility_date": "2026-11-11",
   "workers_dev": false,
   "routes": [
-    { "pattern": "console.joese.derekli.dev", "custom_domain": true }
+    { "pattern": "joese-console.derekli.dev", "custom_domain": true }
   ],
   "assets": {
     "directory": "./dist",

@@ -12,7 +12,7 @@
     {
       "binding": "DB",
       "database_name": "joese",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "01dc7c78-f63d-4491-adb4-0bb692b6c0a3",
       "migrations_dir": "../../database/migrations"
     }
   ],

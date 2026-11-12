@@ -25,7 +25,7 @@ JOESE has three connected surfaces:
    official prices.
 
 The proposed public addresses are `joese.derekli.dev` for the exchange,
-`console.joese.derekli.dev` for the console, and `api.joese.derekli.dev` for
+`joese-console.derekli.dev` for the console, and `api.joese.derekli.dev` for
 the shared API. They are deployment targets, not a requirement to register or
 use them before the product is ready.
 

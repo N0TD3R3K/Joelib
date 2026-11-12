@@ -11,7 +11,7 @@
   "vars": {
     "ENVIRONMENT": "production",
     "ALLOWED_EMAIL_DOMAINS": "sstx.org,hamdenhall.org",
-    "ALLOWED_ORIGINS": "https://joese.derekli.dev,https://console.joese.derekli.dev",
+    "ALLOWED_ORIGINS": "https://joese.derekli.dev,https://joese-console.derekli.dev",
     "REQUIRE_INVITE": "true",
     "ENFORCE_TRADING_SCHEDULE": "true",
     "RESEND_FROM_EMAIL": "JOESE <noreply@joese.derekli.dev>",
@@ -23,7 +23,7 @@
     {
       "binding": "DB",
       "database_name": "joese",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "01dc7c78-f63d-4491-adb4-0bb692b6c0a3",
       "migrations_dir": "../../database/migrations"
     }
   ],
