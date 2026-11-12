@@ -69,7 +69,8 @@ JOESE uses email-and-password sign-in after initial verification. Email is used
 for verification and a neutral password-recovery flow; an operator cannot
 silently replace a member's password.
 
-- Passwords are stored with PBKDF2-SHA-256, a unique 16-byte salt, 210,000
+- Passwords are stored with chained PBKDF2-SHA-256, a unique 16-byte salt, 210,000
+  total iterations split into Cloudflare-compatible phases with separate domain labels
   iterations, and a 256-bit result. No password or reversible encryption key
   may be committed or logged.
 - Sessions use secure, `HttpOnly` cookies with appropriate `Secure` and

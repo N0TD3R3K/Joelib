@@ -62,7 +62,7 @@ export function AuthScreen({ onAuthenticated, initialMessage }: Props) {
           {mode !== "reset" && <label className="form-field"><span>School email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" /></label>}
           {mode !== "recovery" && <label className="form-field"><span>{mode === "reset" ? "New password" : "Password"}</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>}
           {mode === "login" && <button className="auth-link" onClick={() => { setMode("recovery"); setTurnstileToken(""); setMessage(""); }}>Forgot password?</button>}
-          {mode === "register" && <label className="form-field"><span>6-Digit Invite Code</span><input value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} placeholder="Paste your Joe invitation phrase" /></label>}
+          {mode === "register" && <label className="form-field"><span>Invitation code</span><input value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} placeholder="Paste your JOESE invitation code" /></label>}
           <TurnstileWidget key={mode} action={mode === "login" || mode === "register" ? mode : "recovery"} onToken={setTurnstileToken} />
           {message && <div className="auth-message">{message}</div>}
           <button className="auth-submit" onClick={submit} disabled={busy || (turnstileEnabled && !turnstileToken)}>{busy ? "Working…" : mode === "login" ? "Enter exchange" : mode === "register" ? "Create account" : mode === "recovery" ? "Send reset link" : "Reset password"}<ArrowRight size={18} /></button>

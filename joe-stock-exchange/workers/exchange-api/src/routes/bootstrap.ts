@@ -33,9 +33,15 @@ export async function handleBootstrap(request: Request, url: URL, env: Env): Pro
       env.DB.prepare("INSERT INTO system_locks (lock_key) VALUES ('administrator_bootstrap')"),
       env.DB.prepare(
         `INSERT INTO users
-          (id, email, username, password_hash, password_salt, role, status, verified_at)
-         VALUES (?, ?, ?, ?, ?, 'administrator', 'active', CURRENT_TIMESTAMP)`,
+          (id, email, username, password_hash, password_salt, role, status,
+           disposable_balance_cents, verified_at)
+         VALUES (?, ?, ?, ?, ?, 'administrator', 'active', 1000000, CURRENT_TIMESTAMP)`,
       ).bind(userId, email, username, passwordResult.hash, passwordResult.salt),
+      env.DB.prepare(
+        `INSERT INTO ledger_entries
+          (id, user_id, entry_type, amount_cents, balance_after_cents, reference_type, reference_id)
+         VALUES (?, ?, 'opening_balance', 1000000, 1000000, 'administrator_bootstrap', ?)`,
+      ).bind(createId("led"), userId, userId),
       env.DB.prepare(
         `INSERT INTO audit_log
           (id, actor_user_id, action, target_type, target_id, after_json, request_id)

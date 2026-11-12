@@ -1,21 +1,22 @@
 import type { Asset, ConsoleLoan, MarketComment, NewsEvent } from "@joese/contracts";
-import { Activity, Bell, BookOpen, ChevronDown, FileClock, Landmark, LayoutDashboard, Menu, MessageSquareText, Newspaper, Search, Settings, ShieldCheck, SlidersHorizontal, UsersRound } from "lucide-react";
+import { Activity, Bell, BookOpen, ChevronDown, FileClock, Landmark, LayoutDashboard, Menu, MessageSquareText, Newspaper, Search, Settings, ShieldCheck, SlidersHorizontal, TicketCheck, UsersRound } from "lucide-react";
 import { useEffect, useState } from "react";
-import { apiReferenceUrl, consoleLogin, createNews, loadConsoleData, moderateComment, saveAsset, updateConsoleLoan, updateMemberFinancialStatus } from "./api";
+import { apiReferenceUrl, consoleLogin, createInvitation, createNews, loadConsoleData, moderateComment, saveAsset, updateConsoleLoan, updateMemberFinancialStatus } from "./api";
 import { AssetEditor } from "./features/asset-editor/AssetEditor";
 import { AuditLog } from "./features/audit-log/AuditLog";
 import { CommentModeration } from "./features/comment-moderation/CommentModeration";
 import { EventDesk } from "./features/event-desk/EventDesk";
 import { JoeBankDesk } from "./features/joe-bank/JoeBankDesk";
+import { InvitationManager } from "./features/invitations/InvitationManager";
 import { MarketMonitor } from "./features/market-monitor/MarketMonitor";
 import { MemberManagement } from "./features/member-management/MemberManagement";
 import { TurnstileWidget, turnstileEnabled } from "./TurnstileWidget";
 
-type Page = "monitor" | "assets" | "events" | "comments" | "members" | "bank" | "audit";
+type Page = "monitor" | "assets" | "events" | "comments" | "members" | "invitations" | "bank" | "audit";
 interface ConsoleData { assets: Asset[]; news: NewsEvent[]; comments: MarketComment[]; members: Record<string, unknown>[]; loans: ConsoleLoan[]; market: { ticks: Record<string, unknown>[]; orders: Record<string, unknown>[] }; audit: Record<string, unknown>[]; }
 
 const navigation: Array<[Page, string, typeof Activity]> = [
-  ["monitor","Market monitor",LayoutDashboard], ["assets","Listings & details",SlidersHorizontal], ["events","Joe Wire events",Newspaper], ["comments","Comments",MessageSquareText], ["members","Members",UsersRound], ["bank","Joe Bank",Landmark], ["audit","Audit log",FileClock],
+  ["monitor","Market monitor",LayoutDashboard], ["assets","Listings & details",SlidersHorizontal], ["events","Joe Wire events",Newspaper], ["comments","Comments",MessageSquareText], ["members","Members",UsersRound], ["invitations","Invitations",TicketCheck], ["bank","Joe Bank",Landmark], ["audit","Audit log",FileClock],
 ];
 
 export function App() {
@@ -45,6 +46,7 @@ export function App() {
           {page === "events" && <EventDesk assets={data.assets} news={data.news} onCreate={async (input) => { await createNews(input); const newEvent: NewsEvent = { ...input, id: crypto.randomUUID(), authorName: "market.ops", publishedAt: input.publishAt ?? new Date().toISOString() }; setData((current) => current ? { ...current, news: [newEvent, ...current.news] } : current); notify("Joe Wire event created"); }} />}
           {page === "comments" && <CommentModeration comments={data.comments} onModerate={async (id,status) => { await moderateComment(id,status); setData((current) => current ? { ...current, comments: current.comments.map((item) => item.id === id ? { ...item, status } : item) } : current); notify(`Comment marked ${status}`); }} />}
           {page === "members" && <MemberManagement members={data.members} />}
+          {page === "invitations" && <InvitationManager onCreate={async (input) => { const invitation = await createInvitation(input); notify("Invitation created — copy it now"); return invitation; }} />}
           {page === "bank" && <JoeBankDesk loans={data.loans} members={data.members} onFinancialStatus={async (id,status,reason) => { await updateMemberFinancialStatus(id,status,reason); await load(); notify(`Member classification changed to ${status}`); }} onLoanAction={async (id,input) => { await updateConsoleLoan(id,input); await load(); notify(input.action === "offer" ? "Loan terms offered" : input.action === "decline" ? "Loan application declined" : "Variable rate updated"); }} />}
           {page === "audit" && <AuditLog rows={data.audit} />}
         </div>

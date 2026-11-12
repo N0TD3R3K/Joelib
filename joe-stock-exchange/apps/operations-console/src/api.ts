@@ -5,6 +5,14 @@ const API_BASE = ((import.meta.env.VITE_API_BASE_URL as string | undefined)?.rep
 export const demoMode = import.meta.env.VITE_DEMO_MODE === "true";
 export const apiReferenceUrl = `${API_BASE}/openapi.json`;
 
+export interface CreatedInvitation {
+  id: string;
+  code: string;
+  maxUses: number;
+  expiresAt: string | null;
+  warning: string;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, { ...init, credentials: "include", headers: { "content-type": "application/json", ...(init.headers ?? {}) } });
   const payload = await response.json() as { data?: T; error?: { message?: string } };
@@ -59,5 +67,18 @@ export async function updateMemberFinancialStatus(id: string, financialStatus: F
 export async function updateConsoleLoan(id: string, input: { action: "offer" | "decline" | "set_rate"; annualRateBps?: number; note: string }): Promise<void> {
   if (demoMode) return;
   await request(`/console/loans/${id}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export async function createInvitation(input: { maxUses: number; expiresAt?: string }): Promise<CreatedInvitation> {
+  if (demoMode) {
+    return {
+      id: crypto.randomUUID(),
+      code: `JOESE-BETA-${crypto.randomUUID().replaceAll("-", "")}`,
+      maxUses: input.maxUses,
+      expiresAt: input.expiresAt ?? null,
+      warning: "This plaintext code is shown once.",
+    };
+  }
+  return request<CreatedInvitation>("/console/invitations", { method: "POST", body: JSON.stringify(input) });
 }
 
