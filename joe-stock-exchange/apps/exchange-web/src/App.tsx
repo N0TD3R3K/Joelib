@@ -45,10 +45,18 @@ export function App() {
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get("token");
     if (window.location.pathname === "/verify" && token && !demoMode) {
-      verifyEmail(token)
-        .then(() => { setAuthMessage("School email verified. You can now sign in."); window.history.replaceState({}, "", "/"); })
-        .catch((error) => setAuthMessage(error instanceof Error ? error.message : "Verification failed"))
-        .finally(() => void refresh());
+      void (async () => {
+        try {
+          await verifyEmail(token);
+          window.history.replaceState({}, "", "/");
+          setAuthMessage("School email verified. You can now sign in.");
+        } catch (error) {
+          setAuthMessage(error instanceof Error ? error.message : "Verification failed");
+        }
+        setPortfolio(null);
+        try { setMarket(await loadMarket()); } catch { setMarket(null); }
+        setLoading(false);
+      })();
     } else {
       void refresh();
     }

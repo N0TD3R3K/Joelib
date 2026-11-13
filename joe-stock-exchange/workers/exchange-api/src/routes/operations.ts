@@ -5,6 +5,7 @@ import { requireAdministrator, requireOperator } from "../lib/auth";
 import { randomToken, sha256 } from "../lib/crypto";
 import { HttpError, json, readJson } from "../lib/http";
 import { createId } from "../lib/ids";
+import { issueVerificationEmail, verificationRecentlyIssued } from "../lib/verification";
 import { joeBankPolicy, mapJoeBankLoan } from "./joe-bank";
 import { mapAsset, mapComment, mapNews } from "./market";
 
@@ -324,10 +325,84 @@ export async function handleOperations(request: Request, url: URL, env: Env): Pr
     const rows = await env.DB.prepare(
       `SELECT id, email, username, role, status, disposable_balance_cents,
               borrowed_principal_cents, financial_status, financial_status_version,
-              verified_at, created_at
+              verified_at, created_at,
+              (SELECT status FROM transactional_emails te
+                WHERE te.user_id = users.id AND te.purpose = 'verification'
+                ORDER BY te.created_at DESC LIMIT 1) AS verification_email_status,
+              (SELECT status_detail FROM transactional_emails te
+                WHERE te.user_id = users.id AND te.purpose = 'verification'
+                ORDER BY te.created_at DESC LIMIT 1) AS verification_email_detail,
+              (SELECT updated_at FROM transactional_emails te
+                WHERE te.user_id = users.id AND te.purpose = 'verification'
+                ORDER BY te.created_at DESC LIMIT 1) AS verification_email_updated_at
          FROM users ORDER BY created_at DESC LIMIT 500`,
     ).all<Record<string, unknown>>();
     return json(rows.results);
+  }
+
+  const memberVerificationMatch = url.pathname.match(/^\/v1\/console\/members\/([^/]+)\/resend-verification$/);
+  if (memberVerificationMatch && request.method === "POST") {
+    await requireAdministrator(request, env);
+    const member = await env.DB.prepare(
+      `SELECT id, email, username FROM users
+        WHERE id = ? AND role = 'member' AND status = 'pending_verification' LIMIT 1`,
+    ).bind(memberVerificationMatch[1]).first<{ id: string; email: string; username: string }>();
+    if (!member) throw new HttpError(404, "PENDING_MEMBER_NOT_FOUND", "That pending member account was not found.");
+    if (await verificationRecentlyIssued(env, member.id)) {
+      return json({ id: member.id, sent: false, cooldown: true });
+    }
+    await issueVerificationEmail(env, member);
+    await env.DB.batch([
+      await audit(
+        env, operator.id, "member.verification_resent", "user", member.id,
+        null, { email: member.email }, requestId,
+      ),
+    ]);
+    return json({ id: member.id, sent: true });
+  }
+
+  const pendingMemberMatch = url.pathname.match(/^\/v1\/console\/members\/([^/]+)\/pending-registration$/);
+  if (pendingMemberMatch && request.method === "DELETE") {
+    await requireAdministrator(request, env);
+    const member = await env.DB.prepare(
+      `SELECT id, email, username, role, status, disposable_balance_cents,
+              borrowed_principal_cents, verified_at, registration_invitation_id,
+              (SELECT COUNT(*) FROM ledger_entries WHERE user_id = users.id) +
+              (SELECT COUNT(*) FROM holdings WHERE user_id = users.id) +
+              (SELECT COUNT(*) FROM orders WHERE user_id = users.id) +
+              (SELECT COUNT(*) FROM trades WHERE buyer_id = users.id OR seller_id = users.id) +
+              (SELECT COUNT(*) FROM cash_transfers WHERE sender_id = users.id OR receiver_id = users.id) +
+              (SELECT COUNT(*) FROM share_offers WHERE seller_id = users.id OR buyer_id = users.id) +
+              (SELECT COUNT(*) FROM loans WHERE user_id = users.id) +
+              (SELECT COUNT(*) FROM comments WHERE user_id = users.id) AS activity_count
+         FROM users WHERE id = ? LIMIT 1`,
+    ).bind(pendingMemberMatch[1]).first<Record<string, unknown>>();
+    if (!member || member.role !== "member" || member.status !== "pending_verification") {
+      throw new HttpError(404, "PENDING_MEMBER_NOT_FOUND", "That pending member account was not found.");
+    }
+    if (Number(member.disposable_balance_cents) !== 0 || Number(member.borrowed_principal_cents) !== 0
+      || member.verified_at != null || Number(member.activity_count) !== 0) {
+      throw new HttpError(409, "PENDING_MEMBER_HAS_ACTIVITY", "This account has activity and cannot be cancelled as a pending registration.");
+    }
+
+    const invitationId = member.registration_invitation_id == null ? null : String(member.registration_invitation_id);
+    const statements: D1PreparedStatement[] = [
+      await audit(
+        env, operator.id, "member.pending_registration_cancelled", "user", String(member.id),
+        member, { deleted: true, invitationUseRestored: Boolean(invitationId) }, requestId,
+      ),
+      ...(invitationId ? [env.DB.prepare(
+        "UPDATE invitation_codes SET used_count = MAX(0, used_count - 1) WHERE id = ?",
+      ).bind(invitationId)] : []),
+      env.DB.prepare("DELETE FROM users WHERE id = ? AND status = 'pending_verification'").bind(String(member.id)),
+    ];
+    await operationTransition(
+      env,
+      statements,
+      "PENDING_MEMBER_CHANGED",
+      "The pending account changed before it could be cancelled.",
+    );
+    return json({ id: String(member.id), cancelled: true, invitationUseRestored: Boolean(invitationId) });
   }
 
   const memberFinancialStatusMatch = url.pathname.match(/^\/v1\/console\/members\/([^/]+)\/financial-status$/);

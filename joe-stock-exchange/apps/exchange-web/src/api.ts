@@ -45,6 +45,10 @@ export async function register(input: { email: string; username: string; passwor
   return request("/auth/register", { method: "POST", body: JSON.stringify(input) });
 }
 
+export async function resendVerification(email: string, turnstileToken: string): Promise<{ message: string; developmentVerificationToken?: string }> {
+  return request("/auth/resend-verification", { method: "POST", body: JSON.stringify({ email, turnstileToken }) });
+}
+
 export async function verifyEmail(token: string): Promise<void> {
   await request("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) });
 }

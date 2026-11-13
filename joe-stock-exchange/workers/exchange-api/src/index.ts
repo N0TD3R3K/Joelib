@@ -8,6 +8,7 @@ import { handleJoeBank } from "./routes/joe-bank";
 import { handleOperations } from "./routes/operations";
 import { handlePortfolio } from "./routes/portfolio";
 import { handleTrades } from "./routes/trades";
+import { handleWebhooks } from "./routes/webhooks";
 
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -30,7 +31,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     return json(openApiDocument);
   }
 
-  const handlers = [handleBootstrap, handleAuth, handleMarket, handlePortfolio, handleJoeBank, handleTrades, handleOperations];
+  const handlers = [handleWebhooks, handleBootstrap, handleAuth, handleMarket, handlePortfolio, handleJoeBank, handleTrades, handleOperations];
   for (const handler of handlers) {
     const response = await handler(request, url, env);
     if (response) return response;

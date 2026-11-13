@@ -45,7 +45,7 @@ export async function getSessionUser(request: Request, env: Env): Promise<Sessio
             u.financial_status_version, u.preferences_json
        FROM sessions s
        JOIN users u ON u.id = s.user_id
-      WHERE s.token_hash = ? AND s.expires_at > CURRENT_TIMESTAMP
+      WHERE s.token_hash = ? AND unixepoch(s.expires_at) > unixepoch()
       LIMIT 1`,
   ).bind(tokenHash).first<Record<string, unknown>>();
   if (!row) return null;

@@ -16,6 +16,7 @@ export const openApiDocument = {
   paths: {
     "/health": { get: { tags: ["Market"], summary: "Service health", responses: { "200": { description: "Healthy" } } } },
     "/auth/register": { post: { tags: ["Auth"], summary: "Register one school-email account", responses: { "201": { description: "Verification sent" } } } },
+    "/auth/resend-verification": { post: { tags: ["Auth"], summary: "Request a neutral, rate-limited replacement verification email", responses: { "200": { description: "Neutral response returned" } } } },
     "/auth/verify-email": { post: { tags: ["Auth"], summary: "Verify school email", responses: { "200": { description: "Account activated" } } } },
     "/auth/login": { post: { tags: ["Auth"], summary: "Create an HttpOnly session", responses: { "200": { description: "Signed in" } } } },
     "/auth/request-password-reset": { post: { tags: ["Auth"], summary: "Request a neutral, short-lived password-reset email", responses: { "200": { description: "Neutral response returned" } } } },
@@ -57,12 +58,15 @@ export const openApiDocument = {
     "/console/comments": { get: { tags: ["Console"], summary: "List comments for moderation", security: [{ sessionCookie: [] }], responses: { "200": { description: "Comments" } } } },
     "/console/comments/{id}": { patch: { tags: ["Console"], summary: "Moderate a comment", security: [{ sessionCookie: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Comment updated" } } } },
     "/console/members": { get: { tags: ["Console"], summary: "List member and staff accounts", security: [{ sessionCookie: [] }], responses: { "200": { description: "Accounts" } } } },
+    "/console/members/{id}/resend-verification": { post: { tags: ["Console"], summary: "Resend verification for a pending member (administrator only)", security: [{ sessionCookie: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Verification resend handled" } } } },
+    "/console/members/{id}/pending-registration": { delete: { tags: ["Console"], summary: "Cancel an activity-free pending registration (administrator only)", security: [{ sessionCookie: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Pending registration cancelled" } } } },
     "/console/members/{id}/financial-status": { patch: { tags: ["Console"], summary: "Formally classify a member as normal or bankrupt with an audited reason", security: [{ sessionCookie: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Classification saved" } } } },
     "/console/loans": { get: { tags: ["Console"], summary: "List Joe Bank applications and liabilities", security: [{ sessionCookie: [] }], responses: { "200": { description: "Loans" } } } },
     "/console/loans/{id}": { patch: { tags: ["Console"], summary: "Offer or decline terms, or change an active variable rate", security: [{ sessionCookie: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { "200": { description: "Loan updated" } } } },
     "/console/market": { get: { tags: ["Console"], summary: "Read recent market ticks and order totals", security: [{ sessionCookie: [] }], responses: { "200": { description: "Market operations status" } } } },
     "/console/audit": { get: { tags: ["Console"], summary: "Read the attributed operator audit log", security: [{ sessionCookie: [] }], responses: { "200": { description: "Audit entries" } } } },
     "/console/invitations": { post: { tags: ["Console"], summary: "Create a one-time or limited-use invitation (administrator only)", security: [{ sessionCookie: [] }], responses: { "201": { description: "Invitation shown once" } } } },
+    "/webhooks/resend": { post: { tags: ["Auth"], summary: "Receive signature-verified Resend delivery events", responses: { "200": { description: "Event accepted" }, "401": { description: "Invalid signature" } } } },
   },
   components: {
     securitySchemes: {

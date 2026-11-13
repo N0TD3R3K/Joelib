@@ -1,7 +1,7 @@
 import type { Asset, ConsoleLoan, MarketComment, NewsEvent } from "@joese/contracts";
 import { Activity, Bell, BookOpen, ChevronDown, FileClock, Landmark, LayoutDashboard, Menu, MessageSquareText, Newspaper, Search, Settings, ShieldCheck, SlidersHorizontal, TicketCheck, UsersRound } from "lucide-react";
 import { useEffect, useState } from "react";
-import { apiReferenceUrl, consoleLogin, createInvitation, createNews, loadConsoleData, moderateComment, saveAsset, updateConsoleLoan, updateMemberFinancialStatus } from "./api";
+import { apiReferenceUrl, cancelPendingRegistration, consoleLogin, createInvitation, createNews, loadConsoleData, moderateComment, resendMemberVerification, saveAsset, updateConsoleLoan, updateMemberFinancialStatus } from "./api";
 import { AssetEditor } from "./features/asset-editor/AssetEditor";
 import { AuditLog } from "./features/audit-log/AuditLog";
 import { CommentModeration } from "./features/comment-moderation/CommentModeration";
@@ -45,7 +45,7 @@ export function App() {
           {page === "assets" && <AssetEditor assets={data.assets} onSave={async (asset) => { const saved = await saveAsset(asset); setData((current) => current ? { ...current, assets: current.assets.map((item) => item.ticker === saved.ticker ? saved : item) } : current); notify(`${saved.ticker} company details saved`); }} />}
           {page === "events" && <EventDesk assets={data.assets} news={data.news} onCreate={async (input) => { await createNews(input); const newEvent: NewsEvent = { ...input, id: crypto.randomUUID(), authorName: "market.ops", publishedAt: input.publishAt ?? new Date().toISOString() }; setData((current) => current ? { ...current, news: [newEvent, ...current.news] } : current); notify("Joe Wire event created"); }} />}
           {page === "comments" && <CommentModeration comments={data.comments} onModerate={async (id,status) => { await moderateComment(id,status); setData((current) => current ? { ...current, comments: current.comments.map((item) => item.id === id ? { ...item, status } : item) } : current); notify(`Comment marked ${status}`); }} />}
-          {page === "members" && <MemberManagement members={data.members} />}
+          {page === "members" && <MemberManagement members={data.members} onResend={async (id) => { const result = await resendMemberVerification(id); await load(); notify(result.sent ? "Fresh verification email sent" : "A verification email was sent recently"); }} onCancel={async (id) => { const result = await cancelPendingRegistration(id); await load(); notify(result.invitationUseRestored ? "Pending registration cancelled and invitation use restored" : "Pending registration cancelled; issue a new invitation if needed"); }} />}
           {page === "invitations" && <InvitationManager onCreate={async (input) => { const invitation = await createInvitation(input); notify("Invitation created — copy it now"); return invitation; }} />}
           {page === "bank" && <JoeBankDesk loans={data.loans} members={data.members} onFinancialStatus={async (id,status,reason) => { await updateMemberFinancialStatus(id,status,reason); await load(); notify(`Member classification changed to ${status}`); }} onLoanAction={async (id,input) => { await updateConsoleLoan(id,input); await load(); notify(input.action === "offer" ? "Loan terms offered" : input.action === "decline" ? "Loan application declined" : "Variable rate updated"); }} />}
           {page === "audit" && <AuditLog rows={data.audit} />}

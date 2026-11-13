@@ -31,6 +31,7 @@ engine has no public route and is invoked by its Cron Trigger.
    ```sh
    npx wrangler secret put SESSION_SECRET --config workers/exchange-api/wrangler.jsonc
    npx wrangler secret put RESEND_API_KEY --config workers/exchange-api/wrangler.jsonc
+   npx wrangler secret put RESEND_WEBHOOK_SECRET --config workers/exchange-api/wrangler.jsonc
    npx wrangler secret put TURNSTILE_SECRET_KEY --config workers/exchange-api/wrangler.jsonc
    npx wrangler secret put INTERNAL_API_KEY --config workers/exchange-api/wrangler.jsonc
    npx wrangler secret put INTERNAL_API_KEY --config workers/market-engine/wrangler.jsonc
@@ -43,6 +44,9 @@ engine has no public route and is invoked by its Cron Trigger.
    `ALLOWED_EMAIL_DOMAINS`, `ALLOWED_ORIGINS`, and `RESEND_FROM_EMAIL` in the
    API Wrangler file. Also confirm the Joe Bank application limit, suggested
    rate, and maximum rate; the Worker deployment check rejects invalid values.
+   In Resend, create a webhook for `https://api.joese.derekli.dev/v1/webhooks/resend`
+   with sent, delivered, delayed, bounced, suppressed, complained, and failed
+   email events. Store its signing secret as `RESEND_WEBHOOK_SECRET`.
 6. Apply migrations and seed only the reference data:
 
    ```sh
@@ -86,8 +90,10 @@ engine has no public route and is invoked by its Cron Trigger.
 | `ALLOWED_ORIGINS` | API | No | Exact member and console origins allowed by CORS. |
 | `REQUIRE_INVITE` | API | No | Require a valid invitation during registration. |
 | `RESEND_FROM_EMAIL` | API | No | Verified transactional sender. |
+| `EMAIL_VERIFICATION_TTL_MINUTES` | API | No | Verification-link lifetime; production defaults to 1,440 minutes. |
 | `SESSION_SECRET` | API | Yes | Additional entropy for session-token hashing. |
 | `RESEND_API_KEY` | API | Yes | Verification and password-recovery email delivery. |
+| `RESEND_WEBHOOK_SECRET` | API | Yes | Verifies Resend delivery and bounce events before recording them. |
 | `TURNSTILE_SECRET_KEY` | API | Yes | Server-side registration and login challenge validation. |
 | `INTERNAL_API_KEY` | API and engine | Yes | Protects internal tick and health coordination. |
 | `JOE_BANK_MAX_LOAN_CENTS` | API | No | Maximum requested recovery loan in whole cents. |
@@ -109,6 +115,8 @@ engine has no public route and is invoked by its Cron Trigger.
 - Confirm the market engine is idempotent for the same hourly tick.
 - Confirm backups, retention, incident response, and account-recovery ownership.
 - Confirm password-reset links expire, work once, and revoke prior sessions.
+- Confirm verification links expire, resend invalidates earlier links, and
+  delivery/bounce events appear on the console Members page.
 - Confirm bankruptcy changes require an operator reason, members accept offered
   loan terms before disbursement, and the 10:00 PM interest accrual runs once.
 

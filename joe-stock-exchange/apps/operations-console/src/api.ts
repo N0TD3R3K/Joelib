@@ -64,6 +64,16 @@ export async function updateMemberFinancialStatus(id: string, financialStatus: F
   await request(`/console/members/${id}/financial-status`, { method: "PATCH", body: JSON.stringify({ financialStatus, reason }) });
 }
 
+export async function resendMemberVerification(id: string): Promise<{ sent: boolean; cooldown?: boolean }> {
+  if (demoMode) return { sent: true };
+  return request(`/console/members/${id}/resend-verification`, { method: "POST", body: "{}" });
+}
+
+export async function cancelPendingRegistration(id: string): Promise<{ cancelled: boolean; invitationUseRestored: boolean }> {
+  if (demoMode) return { cancelled: true, invitationUseRestored: false };
+  return request(`/console/members/${id}/pending-registration`, { method: "DELETE" });
+}
+
 export async function updateConsoleLoan(id: string, input: { action: "offer" | "decline" | "set_rate"; annualRateBps?: number; note: string }): Promise<void> {
   if (demoMode) return;
   await request(`/console/loans/${id}`, { method: "PATCH", body: JSON.stringify(input) });

@@ -42,6 +42,11 @@ The intended registration flow is:
 5. After the school email is verified, the account is activated and receives
    **J$10,000.00 of disposable starting balance** exactly once.
 
+Production verification links are single-use and default to a 24-hour lifetime.
+The sign-in screen provides a neutral, Turnstile-protected resend flow. Issuing
+a replacement link invalidates older unused links. Administrators may also
+resend or cancel an activity-free pending registration from the Members page.
+
 An account must not receive its opening balance, view a trading-enabled
 portfolio, or execute trades until it has completed verification.
 
@@ -94,6 +99,11 @@ Transactional messages should be sent from `noreply@joese.derekli.dev` through
 Cloudflare Email Sending or Resend. Normal Gmail SMTP is not the login-email
 delivery service. A dedicated Gmail inbox may instead be a human support or
 forwarding destination.
+
+Store the Resend provider message ID for each verification and password-reset
+message. A signature-verified webhook records accepted, delayed, delivered,
+bounced, suppressed, complained, and failed states without storing plaintext
+verification or recovery tokens.
 
 Email templates must state that JOESE is a fictional simulation and must never
 include an invitation phrase, password, full session token, or trading account

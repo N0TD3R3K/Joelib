@@ -270,6 +270,7 @@ input:focus, textarea:focus, select:focus { border-color: rgba(242, 191, 86, .62
 .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 18px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: #080a0d; }
 .auth-tabs button { padding: 8px; border-radius: 6px; color: var(--muted); font-size: 10px; }.auth-tabs button.active { color: var(--text); background: #1b2028; }
 .auth-link { display: block; margin: -3px 0 10px auto; color: var(--accent); font-size: 9px; background: transparent; }
+.auth-help-links { display: flex; justify-content: flex-end; gap: 14px; margin: -3px 0 10px; }.auth-help-links .auth-link { margin: 0; }
 .auth-message { margin: 12px 0; padding: 10px; border: 1px solid rgba(242,191,86,.18); border-radius: 8px; color: #dfc78e; background: rgba(242,191,86,.05); font-size: 9px; line-height: 1.5; word-break: break-all; }
 .turnstile-wrap { min-height: 65px; margin-top: 14px; }
 .auth-submit { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 16px; }.auth-submit:disabled { opacity: .5; }

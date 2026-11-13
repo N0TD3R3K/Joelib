@@ -1,9 +1,12 @@
 import type { Env } from "../env";
 import { clearSessionCookie, getSessionUser, sessionCookie } from "../lib/auth";
 import { hashPassword, hashSessionToken, randomToken, sha256, verifyPassword } from "../lib/crypto";
+import { sendTransactionalEmail } from "../lib/email";
 import { HttpError, json, readJson } from "../lib/http";
 import { createId } from "../lib/ids";
+import { consumeNetworkRateLimit } from "../lib/rate-limit";
 import { verifyTurnstile } from "../lib/turnstile";
+import { issueVerificationEmail, verificationRecentlyIssued } from "../lib/verification";
 
 interface RegistrationBody {
   email?: string;
@@ -31,48 +34,16 @@ function isAllowedEmail(email: string, env: Env): boolean {
     .includes(domain);
 }
 
-async function sendVerificationEmail(env: Env, email: string, username: string, token: string): Promise<void> {
-  if (!env.RESEND_API_KEY) {
-    if (env.ENVIRONMENT === "production") {
-      throw new HttpError(503, "EMAIL_NOT_CONFIGURED", "Verification email delivery is not configured.");
-    }
-    return;
-  }
-  const verificationUrl = `https://joese.derekli.dev/verify?token=${encodeURIComponent(token)}`;
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      from: env.RESEND_FROM_EMAIL,
-      to: [email],
-      subject: "Verify your JOESE school email",
-      html: `<div style="font-family:system-ui;background:#0f1217;color:#f4f6f8;padding:32px;border-radius:16px"><h1 style="color:#f2bf56">JOESE</h1><p>Joello ${username},</p><p>Verify your school email to activate one fictional JOESE account and receive your J$10,000 starting balance.</p><p><a href="${verificationUrl}" style="background:#f2bf56;color:#111;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:700">Verify account</a></p><p style="color:#8f99a8">JOESE is a closed simulation. J$ has no real-world value.</p></div>`,
-    }),
-  });
-  if (!response.ok) {
-    throw new HttpError(502, "EMAIL_DELIVERY_FAILED", "The verification email could not be delivered.");
-  }
-}
-
-async function sendPasswordResetEmail(env: Env, email: string, username: string, token: string): Promise<void> {
-  if (!env.RESEND_API_KEY) {
-    if (env.ENVIRONMENT === "production") {
-      throw new HttpError(503, "EMAIL_NOT_CONFIGURED", "Password-reset email delivery is not configured.");
-    }
-    return;
-  }
+async function sendPasswordResetEmail(env: Env, userId: string, email: string, username: string, token: string): Promise<void> {
   const resetUrl = `https://joese.derekli.dev/reset-password?token=${encodeURIComponent(token)}`;
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      from: env.RESEND_FROM_EMAIL,
-      to: [email],
-      subject: "Reset your JOESE password",
-      html: `<div style="font-family:system-ui;background:#0f1217;color:#f4f6f8;padding:32px;border-radius:16px"><h1 style="color:#f2bf56">JOESE</h1><p>Joello ${username},</p><p>A password reset was requested for your fictional JOESE account. This link expires in 15 minutes and works once.</p><p><a href="${resetUrl}" style="background:#f2bf56;color:#111;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:700">Reset password</a></p><p style="color:#8f99a8">If you did not request this, you can ignore this message.</p></div>`,
-    }),
+  await sendTransactionalEmail(env, {
+    userId,
+    purpose: "password_reset",
+    to: email,
+    subject: "Reset your JOESE password",
+    html: `<div style="font-family:system-ui;background:#0f1217;color:#f4f6f8;padding:32px;border-radius:16px"><h1 style="color:#f2bf56">JOESE</h1><p>Joello ${username},</p><p>A password reset was requested for your fictional JOESE account. This link expires in 15 minutes and works once.</p><p><a href="${resetUrl}" style="background:#f2bf56;color:#111;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:700">Reset password</a></p><p style="color:#8f99a8">If you did not request this, you can ignore this message.</p></div>`,
+    text: `Joello ${username},\n\nReset your JOESE password using this single-use link:\n${resetUrl}\n\nThe link expires in 15 minutes. If you did not request this, ignore this message.`,
   });
-  if (!response.ok) throw new HttpError(502, "EMAIL_DELIVERY_FAILED", "The password-reset email could not be delivered.");
 }
 
 export async function handleAuth(request: Request, url: URL, env: Env): Promise<Response | null> {
@@ -108,7 +79,7 @@ export async function handleAuth(request: Request, url: URL, env: Env): Promise<
       const invite = await env.DB.prepare(
         `SELECT id FROM invitation_codes
           WHERE code_hash = ? AND revoked_at IS NULL
-            AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+            AND (expires_at IS NULL OR unixepoch(expires_at) > unixepoch())
             AND used_count < max_uses LIMIT 1`,
       ).bind(inviteHash).first<{ id: string }>();
       if (!invite) throw new HttpError(400, "INVALID_INVITE", "The invitation is invalid or unavailable.");
@@ -116,20 +87,13 @@ export async function handleAuth(request: Request, url: URL, env: Env): Promise<
     }
 
     const userId = createId("usr");
-    const verificationId = createId("verify");
-    const verificationToken = randomToken();
-    const verificationHash = await sha256(verificationToken);
     const passwordResult = await hashPassword(password);
-    const expiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(
-        `INSERT INTO users (id, email, username, password_hash, password_salt)
-         VALUES (?, ?, ?, ?, ?)`,
-      ).bind(userId, email, username, passwordResult.hash, passwordResult.salt),
-      env.DB.prepare(
-        `INSERT INTO email_verification_tokens (id, user_id, token_hash, expires_at)
-         VALUES (?, ?, ?, ?)`,
-      ).bind(verificationId, userId, verificationHash, expiresAt),
+        `INSERT INTO users
+          (id, email, username, password_hash, password_salt, registration_invitation_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      ).bind(userId, email, username, passwordResult.hash, passwordResult.salt, inviteId),
     ];
     if (inviteId) {
       statements.push(env.DB.prepare("UPDATE invitation_codes SET used_count = used_count + 1 WHERE id = ?").bind(inviteId));
@@ -140,11 +104,12 @@ export async function handleAuth(request: Request, url: URL, env: Env): Promise<
       throw new HttpError(409, "REGISTRATION_CONFLICT", "That account or invitation became unavailable. Try again with a different username or invitation.");
     }
 
+    let verificationToken: string;
     try {
-      await sendVerificationEmail(env, email, username, verificationToken);
+      const issued = await issueVerificationEmail(env, { id: userId, email, username });
+      verificationToken = issued.token;
     } catch (error) {
       await env.DB.batch([
-        env.DB.prepare("DELETE FROM email_verification_tokens WHERE user_id = ?").bind(userId),
         env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
         ...(inviteId ? [env.DB.prepare("UPDATE invitation_codes SET used_count = MAX(0, used_count - 1) WHERE id = ?").bind(inviteId)] : []),
       ]);
@@ -161,6 +126,31 @@ export async function handleAuth(request: Request, url: URL, env: Env): Promise<
     );
   }
 
+  if (request.method === "POST" && path === "resend-verification") {
+    const body = await readJson<{ email?: string; turnstileToken?: string }>(request);
+    await verifyTurnstile(request, env, body.turnstileToken, "recovery");
+    const email = normalizeEmail(body.email ?? "");
+    const response: { message: string; developmentVerificationToken?: string } = {
+      message: "If a pending account uses that email, a fresh verification link will be sent.",
+    };
+    if (!await consumeNetworkRateLimit(request, env, "verification_resend", 10)) return json(response);
+    if (!isAllowedEmail(email, env)) return json(response);
+
+    const user = await env.DB.prepare(
+      `SELECT id, email, username FROM users
+        WHERE email = ? AND status = 'pending_verification' LIMIT 1`,
+    ).bind(email).first<{ id: string; email: string; username: string }>();
+    if (!user || await verificationRecentlyIssued(env, user.id)) return json(response);
+
+    try {
+      const issued = await issueVerificationEmail(env, user);
+      if (env.ENVIRONMENT !== "production") response.developmentVerificationToken = issued.token;
+    } catch (error) {
+      console.error("Verification resend failed", { userId: user.id, error });
+    }
+    return json(response);
+  }
+
   if (request.method === "POST" && path === "verify-email") {
     const body = await readJson<{ token?: string }>(request);
     if (!body.token) throw new HttpError(400, "TOKEN_REQUIRED", "Verification token is required.");
@@ -170,25 +160,37 @@ export async function handleAuth(request: Request, url: URL, env: Env): Promise<
          FROM email_verification_tokens evt
          JOIN users u ON u.id = evt.user_id
         WHERE evt.token_hash = ? AND evt.consumed_at IS NULL
-          AND evt.expires_at > CURRENT_TIMESTAMP LIMIT 1`,
+          AND unixepoch(evt.expires_at) > unixepoch()
+          AND u.status = 'pending_verification' LIMIT 1`,
     ).bind(tokenHash).first<{ token_id: string; user_id: string; status: string }>();
     if (!tokenRow) throw new HttpError(400, "INVALID_TOKEN", "The verification link is invalid or expired.");
 
-    await env.DB.batch([
-      env.DB.prepare(
-        `UPDATE users
-            SET status = 'active', verified_at = CURRENT_TIMESTAMP,
-                disposable_balance_cents = CASE WHEN verified_at IS NULL THEN 1000000 ELSE disposable_balance_cents END,
-                updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?`,
-      ).bind(tokenRow.user_id),
-      env.DB.prepare("UPDATE email_verification_tokens SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?").bind(tokenRow.token_id),
-      env.DB.prepare(
-        `INSERT INTO ledger_entries
-          (id, user_id, entry_type, amount_cents, balance_after_cents, reference_type, reference_id)
-         VALUES (?, ?, 'opening_balance', 1000000, 1000000, 'email_verification', ?)`,
-      ).bind(createId("led"), tokenRow.user_id, tokenRow.token_id),
-    ]);
+    try {
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO state_transition_locks
+            (entity_type, entity_id, version_key, action, actor_id)
+           VALUES ('email_verification', ?, 'initial_activation', 'consume', ?)`,
+        ).bind(tokenRow.user_id, tokenRow.user_id),
+        env.DB.prepare(
+          `UPDATE users
+              SET status = 'active', verified_at = CURRENT_TIMESTAMP,
+                  disposable_balance_cents = CASE WHEN verified_at IS NULL THEN 1000000 ELSE disposable_balance_cents END,
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status = 'pending_verification'`,
+        ).bind(tokenRow.user_id),
+        env.DB.prepare(
+          "UPDATE email_verification_tokens SET consumed_at = CURRENT_TIMESTAMP WHERE id = ? AND consumed_at IS NULL",
+        ).bind(tokenRow.token_id),
+        env.DB.prepare(
+          `INSERT INTO ledger_entries
+            (id, user_id, entry_type, amount_cents, balance_after_cents, reference_type, reference_id)
+           VALUES (?, ?, 'opening_balance', 1000000, 1000000, 'email_verification', ?)`,
+        ).bind(createId("led"), tokenRow.user_id, tokenRow.token_id),
+      ]);
+    } catch {
+      throw new HttpError(400, "INVALID_TOKEN", "The verification link is invalid or has already been used.");
+    }
     return json({ verified: true });
   }
 
@@ -241,7 +243,7 @@ export async function handleAuth(request: Request, url: URL, env: Env): Promise<
         ).bind(tokenId, user.id, tokenHash, expiresAt),
       ]);
       try {
-        await sendPasswordResetEmail(env, email, user.username, token);
+        await sendPasswordResetEmail(env, user.id, email, user.username, token);
         if (env.ENVIRONMENT !== "production") developmentResetToken = token;
       } catch (error) {
         await env.DB.prepare("DELETE FROM password_reset_tokens WHERE id = ?").bind(tokenId).run();
@@ -266,7 +268,7 @@ export async function handleAuth(request: Request, url: URL, env: Env): Promise<
       `SELECT prt.id, prt.user_id
          FROM password_reset_tokens prt JOIN users u ON u.id = prt.user_id
         WHERE prt.token_hash = ? AND prt.consumed_at IS NULL
-          AND prt.expires_at > CURRENT_TIMESTAMP AND u.status = 'active' LIMIT 1`,
+          AND unixepoch(prt.expires_at) > unixepoch() AND u.status = 'active' LIMIT 1`,
     ).bind(tokenHash).first<{ id: string; user_id: string }>();
     if (!token) throw new HttpError(400, "INVALID_RESET", "The reset link is invalid or expired.");
     const passwordResult = await hashPassword(password);
