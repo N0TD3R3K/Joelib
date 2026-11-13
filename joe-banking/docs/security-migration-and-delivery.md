@@ -2,9 +2,15 @@
 
 ## 1. JoeAuth integration
 
-Joe Banking should not create a new independent password system shortly before
-JoeAuth becomes available. Its authentication boundary is designed around a
-stable JoeAuth subject ID and application-specific authorization.
+Joe Banking should not create a new independent password system while JoeAuth
+is being prepared for central deployment. Its authentication boundary is
+designed around a stable JoeAuth subject ID and application-specific
+authorization.
+
+The repository-specific endpoints, claims, token lifetimes, client separation,
+readiness gates, and validation rules are documented in
+[joeauth-adaptation.md](joeauth-adaptation.md). The flow below is the high-level
+architecture summary.
 
 Recommended browser flow:
 

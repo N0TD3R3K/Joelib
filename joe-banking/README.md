@@ -50,10 +50,10 @@ and market data, but reserves and settles liquid J$ through the banking ledger.
 This prevents a member from spending the same J$ once in the bank and again in
 the stock market.
 
-Until JoeAuth exists, a temporary identity-link table maps an existing JOESE
-member ID to one banking customer. JoeAuth will later replace that temporary
-identity source without changing historical banking or JOESE financial record
-IDs.
+Until JoeAuth is deployed and approved for central identity, a temporary
+identity-link table maps an existing JOESE member ID to one banking customer.
+JoeAuth will later replace that temporary identity source without changing
+historical banking or JOESE financial record IDs.
 
 ## Document map
 
@@ -65,6 +65,7 @@ IDs.
 - [Member and console experience](docs/member-and-console-ux.md)
 - [Data model and API](docs/data-model-and-api.md)
 - [Security, migration, and delivery plan](docs/security-migration-and-delivery.md)
+- [JoeAuth adaptation](docs/joeauth-adaptation.md)
 
 ## Decisions still required before implementation
 
@@ -77,7 +78,8 @@ IDs.
 4. Whether a fixed-term deposit can be broken early. The proposed first version
    keeps it locked until maturity and permits only an audited exceptional
    correction.
-5. The final `joe-univer.se` hostnames and JoeAuth protocol details.
+5. The final `joe-univer.se` issuer/hostnames and resolution of the JoeAuth
+   readiness gates documented in `docs/joeauth-adaptation.md`.
 6. Banking operator and administrator assignments, backup ownership, and the
    beta migration date.
 

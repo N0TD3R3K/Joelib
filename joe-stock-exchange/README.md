@@ -63,6 +63,10 @@ with the ID returned by Cloudflare before the first remote migration or deploy.
 The API surface is documented in [docs/openapi.yaml](docs/openapi.yaml) and is
 also available from a running API at `GET /v1/openapi.json`.
 
+The planned migration from product-local login to the Joe Team's open-source
+JoeAuth provider is documented in
+[docs/joeauth-adaptation.md](docs/joeauth-adaptation.md).
+
 Joe Bank recovery lending uses an operator-confirmed bankruptcy classification,
 an operator-offered variable rate, explicit member acceptance, daily close
 interest, and voluntary partial or full repayment. Its limits and rate bounds

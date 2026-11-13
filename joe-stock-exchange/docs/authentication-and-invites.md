@@ -2,10 +2,14 @@
 
 ## Scope
 
-JOESE uses its own member-account system. Normal member access must not depend
-on Cloudflare Zero Trust. Zero Trust may be an additional protection for the
-internal Operations Console during early testing, but it does not replace JOESE
-roles, sessions, invitation checks, or audit records.
+The current JOESE beta uses its own member-account system. The target unified
+identity provider is the Joe Team's open-source JoeAuth implementation; the
+reviewed migration and compatibility rules are in
+[joeauth-adaptation.md](joeauth-adaptation.md). Until that cutover is completed
+and reconciled, this document describes the live local system and rollback
+path. Cloudflare Zero Trust may be an additional protection for the internal
+Operations Console during early testing, but it does not replace JOESE roles,
+sessions, invitation checks, or audit records.
 
 JOESE has three server-enforced roles:
 
