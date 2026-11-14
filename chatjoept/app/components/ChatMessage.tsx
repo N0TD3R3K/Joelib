@@ -157,11 +157,34 @@ export function ChatMessage({
 
       {/* Message Body */}
       <div className="flex-1 min-w-0">
-        {/* Web Search indicator if triggered */}
-        {message.webSearch && (
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1e1e1e] border border-white/5 text-[11px] text-[#10a37f] font-medium mb-2.5">
-            <Globe className="w-3 h-3" />
-            <span>Searched the web</span>
+        {/* Tool & Web Search indicators */}
+        {(message.webSearch || (message.toolsUsed && message.toolsUsed.length > 0)) && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
+            {message.toolsUsed?.map((tool) => {
+              const label =
+                tool === "search_joelib" || tool === "read_joelib_document"
+                  ? "Consulted Joelib"
+                  : tool === "deepseek_search"
+                  ? "Searched Joeternet"
+                  : tool === "deepseek_fetch"
+                  ? "Read webpage"
+                  : tool;
+              return (
+                <div
+                  key={tool}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1e1e1e] border border-white/5 text-[11px] text-[#10a37f] font-medium"
+                >
+                  <Globe className="w-3 h-3" />
+                  <span>{label}</span>
+                </div>
+              );
+            })}
+            {message.webSearch && !message.toolsUsed?.includes("deepseek_search") && (
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1e1e1e] border border-white/5 text-[11px] text-[#10a37f] font-medium">
+                <Globe className="w-3 h-3" />
+                <span>Searched the web</span>
+              </div>
+            )}
           </div>
         )}
 

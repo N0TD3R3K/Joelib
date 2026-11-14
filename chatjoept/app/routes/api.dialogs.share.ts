@@ -1,48 +1,98 @@
-import type { ActionFunctionArgs } from "react-router";
-import { parseSessionCookie, verifySessionToken, getEnv } from "~/utils/auth.server";
-import { createSharedDialog, saveUserDialog } from "~/utils/kv";
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
+import { getAuthenticatedUser, getEnv } from "~/utils/auth.server";
+import {
+  ensureUserExists,
+  createSharedSnapshot,
+  listUserSharedLinks,
+  deleteUserSharedLink,
+  deleteAllUserSharedLinks,
+  getUserQuotas,
+} from "~/utils/db.server";
 import type { ChatSession } from "~/types/chat";
 
-export async function action({ request }: ActionFunctionArgs) {
-  if (request.method !== "POST") {
-    return Response.json({ error: "Method not allowed" }, { status: 405 });
-  }
-
+// GET /api/dialogs/share -> list all user shared snapshot links + quotas
+export async function loader({ request }: LoaderFunctionArgs) {
   const env = getEnv();
-  const secret = env.SESSION_SECRET || "chatjoept-default-secret-salt-2026";
-  const cookieHeader = request.headers.get("Cookie");
-  const sessionToken = parseSessionCookie(cookieHeader);
-  const session = await verifySessionToken(sessionToken, secret);
-
-  if (!session?.email) {
+  const session = await getAuthenticatedUser(request, env);
+  if (!session) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: any;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  await ensureUserExists(session, env);
+
+  const [sharedLinks, quotas] = await Promise.all([
+    listUserSharedLinks(session.sub, env),
+    getUserQuotas(session.sub, env),
+  ]);
+
+  return Response.json({ sharedLinks, quotas });
+}
+
+// POST /api/dialogs/share -> create immutable hidden snapshot + link
+// DELETE /api/dialogs/share -> delete shared link & free hidden snapshot storage
+export async function action({ request }: ActionFunctionArgs) {
+  const env = getEnv();
+  const session = await getAuthenticatedUser(request, env);
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const dialog: ChatSession = body?.dialog;
-  if (!dialog || !dialog.messages || dialog.messages.length === 0) {
-    return Response.json({ error: "Cannot share an empty dialog" }, { status: 400 });
+  await ensureUserExists(session, env);
+
+  if (request.method === "POST") {
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    const dialog: ChatSession = body?.dialog;
+    if (!dialog || !dialog.messages || dialog.messages.length === 0) {
+      return Response.json({ error: "Cannot share an empty dialog" }, { status: 400 });
+    }
+
+    const result = await createSharedSnapshot(session.sub, dialog, env);
+    const quotas = await getUserQuotas(session.sub, env);
+
+    if (!result.success || !result.shareId) {
+      return Response.json(
+        { error: result.error || "Failed to create share snapshot", quotas },
+        { status: 400 }
+      );
+    }
+
+    const origin = new URL(request.url).origin;
+    const shareUrl = `${origin}/share/${result.shareId}`;
+
+    return Response.json({
+      success: true,
+      shareId: result.shareId,
+      shareUrl,
+      quotas,
+    });
   }
 
-  const shareId = await createSharedDialog(dialog, env);
-  const origin = new URL(request.url).origin;
-  const shareUrl = `${origin}/share/${shareId}`;
+  if (request.method === "DELETE") {
+    const url = new URL(request.url);
+    const shareId = url.searchParams.get("shareId");
+    const deleteAll = url.searchParams.get("all") === "true";
 
-  // Persist shareId association with user's dialog so future rounds automatically sync to it
-  if (dialog.id) {
-    dialog.shareId = shareId;
-    await saveUserDialog(session.email, dialog, env).catch(console.error);
+    if (deleteAll) {
+      await deleteAllUserSharedLinks(session.sub, env);
+    } else if (shareId) {
+      await deleteUserSharedLink(session.sub, shareId, env);
+    } else {
+      return Response.json({ error: "Missing shareId parameter" }, { status: 400 });
+    }
+
+    const [sharedLinks, quotas] = await Promise.all([
+      listUserSharedLinks(session.sub, env),
+      getUserQuotas(session.sub, env),
+    ]);
+
+    return Response.json({ success: true, sharedLinks, quotas });
   }
 
-  return Response.json({
-    success: true,
-    shareId,
-    shareUrl,
-  });
+  return Response.json({ error: "Method not allowed" }, { status: 405 });
 }

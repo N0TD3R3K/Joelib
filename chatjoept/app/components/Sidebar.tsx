@@ -21,6 +21,9 @@ interface SidebarProps {
   onNewChat: () => void;
   onDeleteSession: (id: string) => void;
   userEmail: string;
+  userName?: string;
+  userPicture?: string;
+  isSoftLimited?: boolean;
   onOpenSettings: () => void;
   onLogout: () => void;
 }
@@ -34,6 +37,9 @@ export function Sidebar({
   onNewChat,
   onDeleteSession,
   userEmail,
+  userName,
+  userPicture,
+  isSoftLimited = false,
   onOpenSettings,
   onLogout,
 }: SidebarProps) {
@@ -100,8 +106,9 @@ export function Sidebar({
             <button
               onClick={onNewChat}
               type="button"
-              className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-              title="New chat"
+              disabled={isSoftLimited}
+              className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title={isSoftLimited ? "Memory full — delete chats or shared links to start a new chat" : "New chat"}
             >
               <SquarePen className="w-4 h-4" />
             </button>
@@ -137,13 +144,16 @@ export function Sidebar({
         <div className="px-3 pb-2">
           <button
             onClick={onNewChat}
-            className="w-full flex items-center justify-between p-2.5 rounded-xl hover:bg-white/5 text-gray-200 text-xs font-medium transition-colors border border-white/5"
+            type="button"
+            disabled={isSoftLimited}
+            className="w-full flex items-center justify-between p-2.5 rounded-xl hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed text-gray-200 text-xs font-medium transition-colors border border-white/5"
+            title={isSoftLimited ? "Memory full — free space in Settings or delete chats" : undefined}
           >
             <div className="flex items-center gap-2">
               <div className="w-5 h-5 rounded-full bg-[#10a37f]/20 flex items-center justify-center text-[#10a37f]">
                 <Sparkles className="w-3 h-3" />
               </div>
-              <span>New chat</span>
+              <span>{isSoftLimited ? "Memory full" : "New chat"}</span>
             </div>
             <SquarePen className="w-3.5 h-3.5 text-gray-400" />
           </button>
@@ -169,14 +179,24 @@ export function Sidebar({
         <div className="p-3 border-t border-white/5 bg-[#141414]">
           <div className="flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-full bg-[#10a37f] text-white flex items-center justify-center font-bold text-xs shrink-0">
-                {initial}
-              </div>
+              {userPicture ? (
+                <img
+                  src={userPicture}
+                  alt={userName || userEmail || "Joe User"}
+                  className="w-7 h-7 rounded-full object-cover shrink-0 border border-white/10"
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-[#10a37f] text-white flex items-center justify-center font-bold text-xs shrink-0">
+                  {userName ? userName.charAt(0).toUpperCase() : initial}
+                </div>
+              )}
               <div className="min-w-0">
                 <div className="text-xs font-semibold text-white truncate max-w-[120px]">
-                  {userEmail || "Joe User"}
+                  {userName || userEmail || "Joe User"}
                 </div>
-                <div className="text-[10px] text-gray-400">Joe Universe Member</div>
+                <div className="text-[10px] text-gray-400 truncate max-w-[120px]">
+                  {userName && userEmail ? userEmail : "Joe Universe Member"}
+                </div>
               </div>
             </div>
 

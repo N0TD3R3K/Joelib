@@ -1,223 +1,340 @@
-// Server-side authentication and verification utilities for ChatJoePT
+// Server-side JoeAuth OIDC + PKCE + Session Authentication Utilities
 
-const DEFAULT_SECRET = "chatjoept-joe-universe-secret-salt-2026";
-export const DEFAULT_ALLOWED_DOMAINS = [
-  "united-taylors.org",
-  "sstx.org",
-  "hamdenhall.org",
-];
+const DEFAULT_SECRET = "chatjoept-default-secret-salt-2026";
+export const DEFAULT_JOEAUTH_ISSUER = "https://auth.joe-univer.se";
+
+export interface SessionPayload {
+  sub: string;
+  email: string;
+  name?: string;
+  picture?: string;
+  exp: number;
+}
+
+export interface OAuthTxPayload {
+  state: string;
+  codeVerifier: string;
+  nonce: string;
+  exp: number;
+}
 
 export function getEnv(): Record<string, any> {
   const g = globalThis as any;
-  if (g.__CF_ENV__) {
-    return g.__CF_ENV__;
-  }
-  if (g.process && g.process.env) {
-    return g.process.env;
-  }
+  if (g.__CF_ENV__) return g.__CF_ENV__;
+  if (g.process && g.process.env) return g.process.env;
   return {};
 }
 
-async function getCryptoKey(secret: string): Promise<CryptoKey> {
-  const enc = new TextEncoder();
+export function getSessionSecret(env?: Record<string, any>): string {
+  const e = env || getEnv();
+  return (e.SESSION_SECRET || DEFAULT_SECRET).trim() || DEFAULT_SECRET;
+}
+
+export function getJoeAuthIssuer(env?: Record<string, any>): string {
+  const e = env || getEnv();
+  return (e.JOEAUTH_ISSUER || DEFAULT_JOEAUTH_ISSUER).trim().replace(/\/+$/, "");
+}
+
+export function isHttpsRequest(request: Request): boolean {
+  const proto = request.headers.get("x-forwarded-proto");
+  if (proto) return proto.toLowerCase().includes("https");
+  try {
+    return new URL(request.url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecode(str: string): Uint8Array<ArrayBuffer> {
+  const padded = str.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((str.length + 3) % 4);
+  const binary = atob(padded);
+  const buffer = new ArrayBuffer(binary.length);
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+export function generateRandomBase64Url(numBytes = 32): string {
+  const bytes = new Uint8Array(numBytes);
+  crypto.getRandomValues(bytes);
+  return base64UrlEncode(bytes);
+}
+
+export async function computeS256Challenge(codeVerifier: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(codeVerifier)
+  );
+  return base64UrlEncode(new Uint8Array(digest));
+}
+
+async function getHmacKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",
-    enc.encode(secret || DEFAULT_SECRET),
+    new TextEncoder().encode(secret || DEFAULT_SECRET),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"]
   );
 }
 
-async function hmacSign(message: string, secret: string): Promise<string> {
-  const key = await getCryptoKey(secret);
-  const enc = new TextEncoder();
-  const signature = await crypto.subtle.sign("HMAC", key, enc.encode(message));
-  return Array.from(new Uint8Array(signature))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+async function signSignedJson<T extends object>(payload: T, secret: string): Promise<string> {
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(payload));
+  const payloadB64 = base64UrlEncode(jsonBytes);
+  const key = await getHmacKey(secret);
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(payloadB64)
+  );
+  return `${payloadB64}.${base64UrlEncode(new Uint8Array(sig))}`;
 }
 
-export function isAllowedEmail(email: string, customConfig?: string): boolean {
-  if (!email || typeof email !== "string") return false;
-  const cleanEmail = email.trim().toLowerCase();
-  const atIndex = cleanEmail.lastIndexOf("@");
-  if (atIndex === -1 || atIndex === cleanEmail.length - 1) return false;
-
-  const emailDomain = cleanEmail.slice(atIndex + 1);
-
-  // Check custom allowed domains config if provided
-  if (customConfig && customConfig.trim()) {
-    const customList = customConfig
-      .split(",")
-      .map((d) => d.trim().toLowerCase().replace(/^@/, ""));
-    if (customList.includes(emailDomain)) {
-      return true;
-    }
-  }
-
-  // Default allowed domains check
-  return DEFAULT_ALLOWED_DOMAINS.includes(emailDomain);
-}
-
-export async function createOtpChallenge(
-  email: string,
-  secret: string
-): Promise<{ code: string; challengeToken: string; expiresAt: number }> {
-  const cleanEmail = email.trim().toLowerCase();
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
-
-  const payload = `${cleanEmail}:${code}:${expiresAt}`;
-  const sig = await hmacSign(payload, secret);
-  const challengeToken = `${cleanEmail}:${expiresAt}:${sig}`;
-
-  return { code, challengeToken, expiresAt };
-}
-
-export async function verifyOtpChallenge(
-  email: string,
-  code: string,
-  challengeToken: string,
-  secret: string
-): Promise<boolean> {
-  if (!email || !code || !challengeToken) return false;
-  const cleanEmail = email.trim().toLowerCase();
-  const cleanCode = code.trim();
-
-  const parts = challengeToken.split(":");
-  if (parts.length !== 3) return false;
-
-  const [cEmail, cExpiresAt, cSig] = parts;
-  if (cEmail !== cleanEmail) return false;
-
-  const exp = Number(cExpiresAt);
-  if (Number.isNaN(exp) || Date.now() > exp) return false;
-
-  const expectedPayload = `${cleanEmail}:${cleanCode}:${cExpiresAt}`;
-  const expectedSig = await hmacSign(expectedPayload, secret);
-
-  return expectedSig === cSig;
-}
-
-export async function createSessionToken(
-  email: string,
-  secret: string
-): Promise<string> {
-  const cleanEmail = email.trim().toLowerCase();
-  const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
-  const payload = `${cleanEmail}:${expiresAt}`;
-  const sig = await hmacSign(payload, secret);
-  return `${payload}:${sig}`;
-}
-
-export async function verifySessionToken(
+async function verifySignedJson<T extends { exp?: number }>(
   token: string | null | undefined,
   secret: string
-): Promise<{ email: string } | null> {
+): Promise<T | null> {
   if (!token) return null;
-  const parts = token.split(":");
-  if (parts.length !== 3) return null;
+  const dotIdx = token.indexOf(".");
+  if (dotIdx <= 0) return null;
 
-  const [email, expiresAt, sig] = parts;
-  const exp = Number(expiresAt);
-  if (Number.isNaN(exp) || Date.now() > exp) return null;
+  const payloadB64 = token.slice(0, dotIdx);
+  const sigB64 = token.slice(dotIdx + 1);
+  if (!sigB64) return null;
 
-  const expectedPayload = `${email}:${expiresAt}`;
-  const expectedSig = await hmacSign(expectedPayload, secret);
-  if (expectedSig !== sig) return null;
+  try {
+    const key = await getHmacKey(secret);
+    const sigBytes = base64UrlDecode(sigB64);
+    const valid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      sigBytes,
+      new TextEncoder().encode(payloadB64)
+    );
+    if (!valid) return null;
 
-  return { email };
+    const json = new TextDecoder().decode(base64UrlDecode(payloadB64));
+    const parsed = JSON.parse(json) as T;
+    if (parsed.exp && Date.now() > parsed.exp) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
-export function parseSessionCookie(cookieHeader: string | null): string | null {
+export function parseCookieValue(cookieHeader: string | null, name: string): string | null {
   if (!cookieHeader) return null;
-  const cookies = cookieHeader.split(";").map((c) => c.trim());
-  for (const c of cookies) {
-    if (c.startsWith("chatjoept_session=")) {
-      return decodeURIComponent(c.substring("chatjoept_session=".length));
+  const prefix = `${name}=`;
+  const parts = cookieHeader.split(";").map((c) => c.trim());
+  for (const part of parts) {
+    if (part.startsWith(prefix)) {
+      return decodeURIComponent(part.slice(prefix.length));
     }
   }
   return null;
 }
 
+// -------------------------------------------------------------
+// Session Cookie Helpers
+// -------------------------------------------------------------
+
+export const SESSION_COOKIE_NAME = "chatjoept_session";
+export const OAUTH_TX_COOKIE_NAME = "chatjoept_oauth_tx";
+
+export async function createSessionToken(
+  user: Omit<SessionPayload, "exp">,
+  secret: string
+): Promise<string> {
+  const payload: SessionPayload = {
+    ...user,
+    exp: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days
+  };
+  return signSignedJson(payload, secret);
+}
+
+export async function verifySessionToken(
+  token: string | null | undefined,
+  secret: string
+): Promise<SessionPayload | null> {
+  const payload = await verifySignedJson<SessionPayload>(token, secret);
+  if (!payload || !payload.sub || !payload.email) return null;
+  return payload;
+}
+
+export async function getAuthenticatedUser(
+  request: Request,
+  env?: Record<string, any>
+): Promise<SessionPayload | null> {
+  const secret = getSessionSecret(env);
+  const token = parseCookieValue(request.headers.get("Cookie"), SESSION_COOKIE_NAME);
+  return verifySessionToken(token, secret);
+}
+
 export function serializeSessionCookie(
   token: string,
+  isHttps: boolean,
   maxAge = 30 * 24 * 60 * 60
 ): string {
-  return `chatjoept_session=${encodeURIComponent(
+  const secureAttr = isHttps ? "; Secure" : "";
+  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(
     token
-  )}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax; Secure`;
+  )}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secureAttr}`;
 }
 
-export function clearSessionCookie(): string {
-  return `chatjoept_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure`;
+export function clearSessionCookie(isHttps: boolean): string {
+  const secureAttr = isHttps ? "; Secure" : "";
+  return `${SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secureAttr}`;
 }
 
-export async function sendOtpEmail(options: {
-  apiKey?: string;
-  from?: string;
-  to: string;
-  code: string;
-}): Promise<{ success: boolean; simulated?: boolean; error?: string }> {
-  const {
-    apiKey,
-    from = "ChatJoePT <chatjoept-noreply@united-taylors.org>",
-    to,
-    code,
-  } = options;
+// -------------------------------------------------------------
+// OAuth PKCE Transaction Cookie Helpers
+// -------------------------------------------------------------
 
-  if (!apiKey || apiKey.trim() === "") {
-    // If no Resend key provided yet, log simulated code so local development can proceed smoothly
-    console.warn(
-      `[ChatJoePT Auth] RESEND_API_KEY is not configured. SIMULATED OTP CODE FOR ${to}: ${code}`
-    );
-    return { success: true, simulated: true };
+export async function createOAuthTxCookieValue(
+  tx: Omit<OAuthTxPayload, "exp">,
+  secret: string
+): Promise<string> {
+  return signSignedJson(
+    { ...tx, exp: Date.now() + 10 * 60 * 1000 }, // 10 minutes
+    secret
+  );
+}
+
+export async function verifyOAuthTxCookie(
+  request: Request,
+  secret: string
+): Promise<OAuthTxPayload | null> {
+  const token = parseCookieValue(request.headers.get("Cookie"), OAUTH_TX_COOKIE_NAME);
+  return verifySignedJson<OAuthTxPayload>(token, secret);
+}
+
+export function serializeOAuthTxCookie(value: string, isHttps: boolean): string {
+  const secureAttr = isHttps ? "; Secure" : "";
+  return `${OAUTH_TX_COOKIE_NAME}=${encodeURIComponent(
+    value
+  )}; Path=/; Max-Age=600; HttpOnly; SameSite=Lax${secureAttr}`;
+}
+
+export function clearOAuthTxCookie(isHttps: boolean): string {
+  const secureAttr = isHttps ? "; Secure" : "";
+  return `${OAUTH_TX_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secureAttr}`;
+}
+
+// -------------------------------------------------------------
+// JoeAuth OIDC Ed25519 JWKS Verification
+// -------------------------------------------------------------
+
+let cachedJwks: { issuer: string; keys: any[]; expiresAt: number } | null = null;
+
+async function fetchJoeAuthJwks(issuer: string): Promise<any[]> {
+  if (cachedJwks && cachedJwks.issuer === issuer && Date.now() < cachedJwks.expiresAt) {
+    return cachedJwks.keys;
+  }
+  const resp = await fetch(`${issuer}/.well-known/jwks.json`);
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch JoeAuth JWKS (${resp.status})`);
+  }
+  const data = (await resp.json()) as { keys?: any[] };
+  const keys = Array.isArray(data?.keys) ? data.keys : [];
+  cachedJwks = { issuer, keys, expiresAt: Date.now() + 5 * 60 * 1000 };
+  return keys;
+}
+
+export interface VerifiedIdTokenClaims {
+  sub: string;
+  email?: string;
+  name?: string;
+  picture?: string;
+  iss: string;
+  aud: string | string[];
+  nonce?: string;
+  exp: number;
+}
+
+export async function verifyJoeAuthIdToken(
+  idToken: string,
+  options: { issuer: string; clientId: string; expectedNonce?: string }
+): Promise<VerifiedIdTokenClaims> {
+  const parts = idToken.split(".");
+  if (parts.length !== 3) {
+    throw new Error("Invalid ID token format");
   }
 
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey.trim()}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from,
-        to: [to],
-        subject: `Your ChatJoePT Verification Code: ${code}`,
-        html: `
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #171717; color: #ececec; padding: 40px; border-radius: 12px; max-width: 520px; margin: 0 auto; border: 1px solid #333;">
-            <div style="text-align: center; margin-bottom: 24px;">
-              <h1 style="color: #10a37f; margin: 0; font-size: 28px; font-weight: 700;">ChatJoePT</h1>
-              <p style="color: #999; margin: 6px 0 0 0; font-size: 14px;">The Official Intelligence of the Joe Universe</p>
-            </div>
-            <div style="background-color: #212121; padding: 24px; border-radius: 8px; text-align: center; border: 1px solid #2f2f2f;">
-              <p style="font-size: 16px; margin: 0 0 16px 0; color: #ddd;">Joello! Here is your one-time verification code to access ChatJoePT:</p>
-              <div style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #10a37f; padding: 12px; background-color: #111; border-radius: 6px; display: inline-block; margin-bottom: 16px;">
-                ${code}
-              </div>
-              <p style="font-size: 13px; color: #888; margin: 0;">This code will expire in 10 minutes. If you did not request this joemail, please disregard it.</p>
-            </div>
-            <div style="text-align: center; margin-top: 24px; font-size: 12px; color: #666;">
-              <p style="margin: 0;">To Joe, or not to Joe, that is the question.</p>
-              <p style="margin: 4px 0 0 0;">&copy; 2026 ChatJoePT &bull; United Taylors Joe Universe</p>
-            </div>
-          </div>
-        `,
-      }),
-    });
+  const [headerB64, payloadB64, sigB64] = parts;
+  const header = JSON.parse(new TextDecoder().decode(base64UrlDecode(headerB64)));
+  if (header.alg !== "EdDSA") {
+    throw new Error(`Unsupported ID token algorithm: ${header.alg}`);
+  }
 
-    if (!res.ok) {
-      const errJson = (await res.json().catch(() => ({}))) as Record<string, any>;
-      const errMsg = errJson?.message || `Resend API failed with status ${res.status}`;
-      console.error("[ChatJoePT Auth] Resend error:", errMsg);
-      return { success: false, error: errMsg };
+  const keys = await fetchJoeAuthJwks(options.issuer);
+  if (keys.length === 0) {
+    throw new Error("JoeAuth JWKS returned no public keys");
+  }
+
+  const candidateKeys = header.kid
+    ? keys.filter((k) => k.kid === header.kid)
+    : keys;
+  const keysToTry = candidateKeys.length > 0 ? candidateKeys : keys;
+
+  const sigBytes = base64UrlDecode(sigB64);
+  const signedData = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+
+  let signatureValid = false;
+  for (const jwk of keysToTry) {
+    try {
+      const pubKey = await crypto.subtle.importKey(
+        "jwk",
+        jwk,
+        { name: "Ed25519" },
+        false,
+        ["verify"]
+      );
+      if (await crypto.subtle.verify("Ed25519", pubKey, sigBytes, signedData)) {
+        signatureValid = true;
+        break;
+      }
+    } catch {
+      // Try next key in JWKS
     }
-
-    return { success: true };
-  } catch (err: any) {
-    console.error("[ChatJoePT Auth] Resend request exception:", err);
-    return { success: false, error: err.message || "Failed to reach Resend API" };
   }
+
+  if (!signatureValid) {
+    throw new Error("Invalid ID token Ed25519 signature");
+  }
+
+  const claims = JSON.parse(
+    new TextDecoder().decode(base64UrlDecode(payloadB64))
+  ) as VerifiedIdTokenClaims;
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (typeof claims.exp !== "number" || claims.exp < nowSec - 30) {
+    throw new Error("ID token expired");
+  }
+  if (claims.iss !== options.issuer) {
+    throw new Error("ID token issuer mismatch");
+  }
+  const audValid = Array.isArray(claims.aud)
+    ? claims.aud.includes(options.clientId)
+    : claims.aud === options.clientId;
+  if (!audValid) {
+    throw new Error("ID token audience mismatch");
+  }
+  if (options.expectedNonce && claims.nonce !== options.expectedNonce) {
+    throw new Error("ID token nonce mismatch");
+  }
+  if (!claims.sub) {
+    throw new Error("ID token missing sub claim");
+  }
+
+  return claims;
 }

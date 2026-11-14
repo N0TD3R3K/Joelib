@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   Sparkles,
@@ -9,36 +9,95 @@ import {
   Laptop,
   ShieldCheck,
   Check,
+  Link2,
+  ExternalLink,
+  Copy,
+  Loader2,
+  AlertTriangle,
 } from "lucide-react";
+import type { SharedLinkSummary, UserQuotas } from "~/types/chat";
+
+export type SettingsTab = "general" | "account" | "shares" | "about";
 
 interface SettingsModalProps {
   isOpen: boolean;
+  initialTab?: SettingsTab;
   onClose: () => void;
   userEmail: string;
+  userName?: string;
+  userPicture?: string;
   onClearChats: () => void;
   onLogout: () => void;
+  onQuotasUpdated?: (quotas: UserQuotas) => void;
   theme?: "dark" | "light" | "system";
   onThemeChange?: (theme: "dark" | "light" | "system") => void;
-  quotas?: {
-    usagePercent: number;
-    dialogsPercent: number;
-    storagePercent: number;
-  };
+  quotas?: UserQuotas;
 }
 
 export function SettingsModal({
   isOpen,
+  initialTab = "general",
   onClose,
   userEmail,
+  userName,
+  userPicture,
   onClearChats,
   onLogout,
+  onQuotasUpdated,
   theme = "dark",
   onThemeChange,
-  quotas = { usagePercent: 0, dialogsPercent: 0, storagePercent: 0 },
+  quotas = {
+    usagePercent: 0,
+    chatPercent: 0,
+    sharePercent: 0,
+    freePercent: 100,
+    isSoftLimited: false,
+    isHardLimited: false,
+  },
 }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<"general" | "account" | "about">("general");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearedNotice, setClearedNotice] = useState(false);
+
+  // Shared Links Management State
+  const [sharedLinks, setSharedLinks] = useState<SharedLinkSummary[]>([]);
+  const [sharesLoading, setSharesLoading] = useState(false);
+  const [sharesError, setSharesError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
+
+  const loadSharedLinks = async () => {
+    setSharesLoading(true);
+    setSharesError(null);
+    try {
+      const res = await fetch("/api/dialogs/share");
+      if (!res.ok) throw new Error("Failed to load shared links");
+      const data = (await res.json()) as {
+        sharedLinks?: SharedLinkSummary[];
+        quotas?: UserQuotas;
+      };
+      setSharedLinks(data.sharedLinks || []);
+      if (data.quotas && onQuotasUpdated) {
+        onQuotasUpdated(data.quotas);
+      }
+    } catch (err: any) {
+      setSharesError(err?.message || "Could not load shared links");
+    } finally {
+      setSharesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && activeTab === "shares") {
+      loadSharedLinks();
+    }
+  }, [isOpen, activeTab]);
 
   if (!isOpen) return null;
 
@@ -47,6 +106,62 @@ export function SettingsModal({
     setShowClearConfirm(false);
     setClearedNotice(true);
     setTimeout(() => setClearedNotice(false), 2000);
+  };
+
+  const handleCopyShareLink = async (shareId: string) => {
+    const url = `${window.location.origin}/share/${shareId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(shareId);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      // Ignore clipboard failures
+    }
+  };
+
+  const handleDeleteShareLink = async (shareId: string) => {
+    setDeletingId(shareId);
+    try {
+      const res = await fetch(
+        `/api/dialogs/share?shareId=${encodeURIComponent(shareId)}`,
+        { method: "DELETE" }
+      );
+      const data = (await res.json()) as {
+        sharedLinks?: SharedLinkSummary[];
+        quotas?: UserQuotas;
+      };
+      if (data.sharedLinks) {
+        setSharedLinks(data.sharedLinks);
+      } else {
+        setSharedLinks((prev) => prev.filter((l) => l.shareId !== shareId));
+      }
+      if (data.quotas && onQuotasUpdated) {
+        onQuotasUpdated(data.quotas);
+      }
+    } catch {
+      setSharesError("Failed to delete shared snapshot");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleDeleteAllShares = async () => {
+    setDeletingId("__all__");
+    try {
+      const res = await fetch(`/api/dialogs/share?all=true`, { method: "DELETE" });
+      const data = (await res.json()) as {
+        sharedLinks?: SharedLinkSummary[];
+        quotas?: UserQuotas;
+      };
+      setSharedLinks(data.sharedLinks || []);
+      if (data.quotas && onQuotasUpdated) {
+        onQuotasUpdated(data.quotas);
+      }
+    } catch {
+      setSharesError("Failed to clear shared snapshots");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -67,47 +182,32 @@ export function SettingsModal({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-white/10 px-6 text-xs font-medium">
-          <button
-            type="button"
-            onClick={() => setActiveTab("general")}
-            className={`py-3 px-3 border-b-2 transition-colors ${
-              activeTab === "general"
-                ? "border-[#10a37f] text-white"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            General
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("account")}
-            className={`py-3 px-3 border-b-2 transition-colors ${
-              activeTab === "account"
-                ? "border-[#10a37f] text-white"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            Account & Data
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("about")}
-            className={`py-3 px-3 border-b-2 transition-colors ${
-              activeTab === "about"
-                ? "border-[#10a37f] text-white"
-                : "border-transparent text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            About
-          </button>
+        <div className="flex border-b border-white/10 px-6 text-xs font-medium overflow-x-auto">
+          {[
+            { id: "general" as const, label: "General" },
+            { id: "account" as const, label: "Account & Memory" },
+            { id: "shares" as const, label: "Shared Links" },
+            { id: "about" as const, label: "About" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`py-3 px-3 border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === tab.id
+                  ? "border-[#10a37f] text-white"
+                  : "border-transparent text-gray-400 hover:text-gray-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {/* Content Body */}
         <div className="p-6 overflow-y-auto space-y-5 text-sm flex-1">
           {activeTab === "general" && (
             <div className="space-y-4">
-              {/* Theme Selector */}
               <div>
                 <label className="block text-xs font-medium text-gray-300 mb-2">
                   Theme
@@ -139,14 +239,13 @@ export function SettingsModal({
                 </div>
               </div>
 
-              {/* Language Info */}
               <div className="p-3.5 rounded-xl bg-[#1c1c1c] border border-white/5 space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-gray-200">Spoken Dialect</span>
-                  <span className="text-xs text-[#10a37f] font-semibold">Joeglish (Sacred)</span>
+                  <span className="text-xs font-medium text-gray-200">Persona</span>
+                  <span className="text-xs text-[#10a37f] font-semibold">ChatJoePT (Joe Universe)</span>
                 </div>
                 <p className="text-[11px] text-gray-400 leading-relaxed">
-                  ChatJoePT natively communicates with the authentic grammar and lore of the Joe Universe.
+                  Balanced Joeglish personality with on-demand access to the Joelib reference archives.
                 </p>
               </div>
             </div>
@@ -154,31 +253,40 @@ export function SettingsModal({
 
           {activeTab === "account" && (
             <div className="space-y-4">
-              {/* Account Card */}
-              <div className="p-4 rounded-xl bg-[#1c1c1c] border border-white/5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Authenticated Email</span>
-                  <div className="flex items-center gap-1 text-xs text-emerald-400">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Verified</span>
+              {/* JoeAuth Account Card */}
+              <div className="p-4 rounded-xl bg-[#1c1c1c] border border-white/5 flex items-center gap-3">
+                {userPicture ? (
+                  <img
+                    src={userPicture}
+                    alt={userName || userEmail}
+                    className="w-10 h-10 rounded-full object-cover border border-white/10 shrink-0"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-[#10a37f] text-white flex items-center justify-center font-bold text-sm shrink-0">
+                    {(userName || userEmail || "J").charAt(0).toUpperCase()}
                   </div>
-                </div>
-                <div className="text-sm font-semibold text-white font-mono break-all">
-                  {userEmail || "Anonymous Joe"}
-                </div>
-                <div className="text-[11px] text-gray-400">
-                  United Taylors &bull; Joe Universe Research Division
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-white truncate">
+                      {userName || userEmail || "Joe User"}
+                    </span>
+                    <div className="flex items-center gap-1 text-[11px] text-emerald-400 shrink-0">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>JoeAuth</span>
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-400 font-mono truncate">
+                    {userEmail}
+                  </div>
                 </div>
               </div>
 
-              {/* Account Quotas & Capacity (Percentages only, no raw provider data) */}
-              <div className="p-4 rounded-xl bg-[#1c1c1c] border border-white/5 space-y-3">
-                <div className="text-xs font-semibold text-gray-200">Capacity & Quotas</div>
-
-                {/* 24-Hour Usage Quota */}
+              {/* 24-Hour Usage Quota */}
+              <div className="p-4 rounded-xl bg-[#1c1c1c] border border-white/5 space-y-4">
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-400">24h Usage Quota</span>
+                    <span className="font-semibold text-gray-200">24h Usage Quota</span>
                     <span
                       className={`font-mono font-medium ${
                         quotas.usagePercent >= 90
@@ -191,7 +299,7 @@ export function SettingsModal({
                       {quotas.usagePercent}%
                     </span>
                   </div>
-                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                  <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-300 ${
                         quotas.usagePercent >= 90
@@ -207,62 +315,74 @@ export function SettingsModal({
                   </div>
                 </div>
 
-                {/* Dialog Count Capacity */}
-                <div className="space-y-1.5">
+                {/* Memory Usage Stacked Bar Chart (Percentages only) */}
+                <div className="pt-2 border-t border-white/5 space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-400">Dialog Capacity</span>
-                    <span
-                      className={`font-mono font-medium ${
-                        quotas.dialogsPercent >= 90 ? "text-red-400" : "text-gray-300"
-                      }`}
-                    >
-                      {quotas.dialogsPercent}%
+                    <span className="font-semibold text-gray-200">Memory Usage</span>
+                    <span className="text-[11px] font-mono text-gray-400">
+                      {quotas.freePercent}% left
                     </span>
                   </div>
-                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${
-                        quotas.dialogsPercent >= 90 ? "bg-red-500" : "bg-emerald-500"
-                      }`}
-                      style={{
-                        width: `${Math.min(100, Math.max(0, quotas.dialogsPercent))}%`,
-                      }}
-                    />
-                  </div>
-                </div>
 
-                {/* Storage Space Capacity */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-400">Storage Used</span>
-                    <span
-                      className={`font-mono font-medium ${
-                        quotas.storagePercent >= 90 ? "text-red-400" : "text-gray-300"
-                      }`}
-                    >
-                      {quotas.storagePercent}%
-                    </span>
+                  {/* Stacked Horizontal Bar */}
+                  <div
+                    className="w-full h-3 bg-white/10 rounded-full overflow-hidden flex"
+                    role="img"
+                    aria-label={`Memory usage: ${quotas.chatPercent}% chats, ${quotas.sharePercent}% shared links, ${quotas.freePercent}% available`}
+                  >
+                    {quotas.chatPercent > 0 && (
+                      <div
+                        className="h-full bg-[#10a37f] transition-all duration-300"
+                        style={{ width: `${quotas.chatPercent}%` }}
+                        title={`Chats: ${quotas.chatPercent}%`}
+                      />
+                    )}
+                    {quotas.sharePercent > 0 && (
+                      <div
+                        className="h-full bg-sky-400 transition-all duration-300"
+                        style={{ width: `${quotas.sharePercent}%` }}
+                        title={`Shared Links: ${quotas.sharePercent}%`}
+                      />
+                    )}
                   </div>
-                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${
-                        quotas.storagePercent >= 90 ? "bg-red-500" : "bg-teal-500"
-                      }`}
-                      style={{
-                        width: `${Math.min(100, Math.max(0, quotas.storagePercent))}%`,
-                      }}
-                    />
+
+                  {/* Stacked Bar Legend */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-gray-300 pt-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-[#10a37f] inline-block" />
+                      <span>Chats:</span>
+                      <span className="font-mono text-white">{quotas.chatPercent}%</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-sky-400 inline-block" />
+                      <span>Shared Links:</span>
+                      <span className="font-mono text-white">{quotas.sharePercent}%</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-sm bg-white/15 inline-block" />
+                      <span>Available:</span>
+                      <span className="font-mono text-white">{quotas.freePercent}%</span>
+                    </div>
                   </div>
+
+                  {quotas.isSoftLimited && (
+                    <div className="mt-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] flex items-start gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        Memory capacity reached. Delete old chats or shared snapshots to start new conversations.
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Data controls: Clear all chats */}
+              {/* Data controls: Clear all visible chats */}
               <div className="pt-2 border-t border-white/10 space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-xs font-medium text-white">Delete All Chats</div>
                     <div className="text-[11px] text-gray-400">
-                      Permanently wipe all conversation sessions from this device
+                      Deletes all visible chats (manage snapshots in Shared Links)
                     </div>
                   </div>
 
@@ -298,7 +418,7 @@ export function SettingsModal({
                 {clearedNotice && (
                   <div className="flex items-center gap-1.5 text-xs text-green-400 pt-1">
                     <Check className="w-3.5 h-3.5" />
-                    <span>All conversations cleared successfully.</span>
+                    <span>All visible conversations deleted.</span>
                   </div>
                 )}
               </div>
@@ -306,9 +426,9 @@ export function SettingsModal({
               {/* Log out */}
               <div className="pt-3 border-t border-white/10 flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-medium text-white">Log Out</div>
+                  <div className="text-xs font-medium text-white">Log Out of ChatJoePT</div>
                   <div className="text-[11px] text-gray-400">
-                    Sign out of this session
+                    Signs out of this app only (keeps JoeAuth session)
                   </div>
                 </div>
                 <button
@@ -326,6 +446,114 @@ export function SettingsModal({
             </div>
           )}
 
+          {activeTab === "shares" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold text-white">Shared Snapshots</div>
+                  <p className="text-[11px] text-gray-400">
+                    Public links point to hidden snapshots stored in your memory space.
+                  </p>
+                </div>
+                {sharedLinks.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={deletingId === "__all__"}
+                    onClick={handleDeleteAllShares}
+                    className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-red-400 hover:text-white bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 transition-colors disabled:opacity-50"
+                  >
+                    Delete All
+                  </button>
+                )}
+              </div>
+
+              {sharesError && (
+                <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+                  {sharesError}
+                </div>
+              )}
+
+              {sharesLoading ? (
+                <div className="py-10 flex flex-col items-center justify-center gap-2 text-gray-400">
+                  <Loader2 className="w-5 h-5 animate-spin text-[#10a37f]" />
+                  <span className="text-xs">Loading shared snapshots...</span>
+                </div>
+              ) : sharedLinks.length === 0 ? (
+                <div className="py-10 text-center space-y-2 bg-[#1c1c1c] rounded-xl border border-white/5">
+                  <Link2 className="w-6 h-6 text-gray-500 mx-auto" />
+                  <div className="text-xs font-medium text-gray-300">No active shared links</div>
+                  <p className="text-[11px] text-gray-500 max-w-xs mx-auto">
+                    Use the Share button in any conversation to create a public snapshot link.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {sharedLinks.map((link) => {
+                    const dateStr = new Date(link.createdAt).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    });
+                    const rounds = Math.ceil(link.messageCount / 2);
+                    return (
+                      <div
+                        key={link.shareId}
+                        className="p-3 rounded-xl bg-[#1c1c1c] border border-white/5 flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-semibold text-white truncate">
+                            {link.title || "Shared chat"}
+                          </div>
+                          <div className="text-[11px] text-gray-400 flex flex-wrap items-center gap-1.5 mt-0.5">
+                            <span>{dateStr}</span>
+                            <span>&bull;</span>
+                            <span>{rounds} round{rounds !== 1 ? "s" : ""}</span>
+                            <span>&bull;</span>
+                            <span className="text-sky-400 font-mono">
+                              {link.memoryPercent}% mem
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <a
+                            href={`/share/${link.shareId}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                            title="Open snapshot"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyShareLink(link.shareId)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                            title="Copy share URL"
+                          >
+                            {copiedId === link.shareId ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingId === link.shareId}
+                            onClick={() => handleDeleteShareLink(link.shareId)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40"
+                            title="Delete snapshot & free memory"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === "about" && (
             <div className="space-y-4">
               <div className="p-4 rounded-xl bg-[#1c1c1c] border border-white/5 text-center space-y-2">
@@ -334,15 +562,11 @@ export function SettingsModal({
                 </div>
                 <h3 className="text-base font-bold text-white">ChatJoePT</h3>
                 <p className="text-xs text-gray-300 max-w-sm mx-auto leading-relaxed">
-                  The official conversational intelligence of the Joe Universe, powered by the flagship JPT-6.1 Series.
+                  The conversational intelligence of the Joe Universe, backed by Cloudflare D1 and JoeAuth.
                 </p>
                 <div className="text-[11px] text-gray-400 pt-1 font-mono">
                   Version 6.1.0 &bull; Sol / Terra Core
                 </div>
-              </div>
-
-              <div className="text-center text-xs text-gray-400 italic">
-                &ldquo;To Joe, or not to Joe, that is the question.&rdquo;
               </div>
             </div>
           )}

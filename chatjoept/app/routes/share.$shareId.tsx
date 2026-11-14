@@ -3,20 +3,20 @@ import type { LoaderFunctionArgs, MetaFunction } from "react-router";
 import { useLoaderData, Link } from "react-router";
 import { Sparkles, ArrowLeft, MessageSquare, Calendar, Bot } from "lucide-react";
 import { getEnv } from "~/utils/auth.server";
-import { getSharedDialog, type SharedDialog } from "~/utils/kv";
+import { getSharedSnapshot } from "~/utils/db.server";
 import { ChatMessage } from "~/components/ChatMessage";
 
 export const meta: MetaFunction = () => {
   return [
-    { title: "ChatJoePT - Shared Conversation" },
-    { name: "description", content: "A shared conversation from ChatJoePT in the Joe Universe" },
+    { title: "ChatJoePT - Shared Snapshot" },
+    { name: "description", content: "A shared conversation snapshot from ChatJoePT in the Joe Universe" },
   ];
 };
 
 export async function loader({ params }: LoaderFunctionArgs) {
   const shareId = params.shareId || "";
   const env = getEnv();
-  const dialog = await getSharedDialog(shareId, env);
+  const dialog = await getSharedSnapshot(shareId, env);
 
   return {
     shareId,
@@ -35,7 +35,7 @@ export default function SharedChatView() {
         </div>
         <h1 className="text-2xl font-bold mb-2">Shared Chat Not Found</h1>
         <p className="text-gray-400 text-sm max-w-md mb-6">
-          This shared conversation may have expired, been deleted by the author, or never existed.
+          This shared conversation snapshot may have been deleted by the author or never existed.
         </p>
         <Link
           to="/"
@@ -73,7 +73,7 @@ export default function SharedChatView() {
             </span>
           </Link>
           <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-gray-300 font-medium">
-            Shared Chat
+            Shared Snapshot
           </span>
         </div>
 
@@ -98,7 +98,7 @@ export default function SharedChatView() {
           <div className="flex flex-wrap items-center gap-4 text-xs text-gray-400">
             <div className="flex items-center gap-1.5">
               <Calendar className="w-3.5 h-3.5" />
-              <span>{formattedDate}</span>
+              <span>Snapshot from {formattedDate}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Bot className="w-3.5 h-3.5 text-[#10a37f]" />
@@ -109,8 +109,12 @@ export default function SharedChatView() {
 
         {/* Message Thread */}
         <div className="space-y-6">
-          {dialog.messages.map((message) => (
-            <ChatMessage key={message.id} message={message} isStreaming={false} />
+          {dialog.messages.map((message, idx) => (
+            <ChatMessage
+              key={message.id || idx}
+              message={message}
+              isStreaming={false}
+            />
           ))}
         </div>
       </main>

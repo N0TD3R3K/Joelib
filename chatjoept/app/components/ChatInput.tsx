@@ -9,6 +9,7 @@ interface ChatInputProps {
   onStop: () => void;
   isStreaming: boolean;
   disabled?: boolean;
+  softLimitReached?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -24,6 +25,7 @@ export function ChatInput({
   onStop,
   isStreaming,
   disabled = false,
+  softLimitReached = false,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,7 +51,12 @@ export function ChatInput({
   };
 
   const handleSubmit = () => {
-    if (!isStreaming && (input.trim() || attachments.length > 0) && !disabled) {
+    if (
+      !isStreaming &&
+      (input.trim() || attachments.length > 0) &&
+      !disabled &&
+      !softLimitReached
+    ) {
       onSend(attachments, webSearch);
       setAttachments([]);
     }
@@ -84,10 +91,18 @@ export function ChatInput({
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const canSubmit = (input.trim().length > 0 || attachments.length > 0) && !disabled;
+  const canSubmit =
+    (input.trim().length > 0 || attachments.length > 0) &&
+    !disabled &&
+    !softLimitReached;
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 pb-4">
+      {softLimitReached && !isStreaming && (
+        <div className="mb-2 px-3.5 py-2 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs text-center">
+          Memory is full. Delete old chats or shared links in Settings to continue chatting.
+        </div>
+      )}
       {/* Hidden file input */}
       <input
         type="file"

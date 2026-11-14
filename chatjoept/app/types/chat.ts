@@ -12,6 +12,7 @@ export interface Message {
   createdAt: number;
   attachments?: Attachment[];
   webSearch?: boolean;
+  toolsUsed?: string[];
 }
 
 export interface ChatSession {
@@ -21,7 +22,6 @@ export interface ChatSession {
   model: string;
   createdAt: number;
   updatedAt: number;
-  shareId?: string;
 }
 
 export interface UserSettings {
@@ -33,6 +33,29 @@ export interface UserSettings {
 }
 
 export interface AuthUser {
+  sub: string;
   email: string;
+  name?: string;
+  picture?: string;
   isAuthenticated: boolean;
+}
+
+export interface UserQuotas {
+  usagePercent: number;
+  chatPercent: number;
+  sharePercent: number;
+  freePercent: number;
+  isSoftLimited: boolean;
+  isHardLimited: boolean;
+}
+
+export interface SharedLinkSummary {
+  shareId: string;
+  snapshotDialogId: string;
+  sourceDialogId: string | null;
+  title: string;
+  model: string;
+  messageCount: number;
+  memoryPercent: number;
+  createdAt: number;
 }
