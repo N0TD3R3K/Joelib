@@ -3,8 +3,8 @@ import { JOEGLISH_SYSTEM_PROMPT, generateJoeglishFallback } from "~/utils/joegli
 import { getAuthenticatedUser, getEnv } from "~/utils/auth.server";
 import {
   ensureUserExists,
-  checkUser24hAllowed,
-  calculateCostCny,
+  checkUserUsageAllowed,
+  calculateCostUsd,
   recordUserUsage,
   getRemainingDialogBytesBudget,
   utf8ByteLength,
@@ -49,6 +49,41 @@ function sanitizeUpstreamError(status: number, errText: string): string {
   return `[ChatJoePT Error ${status}]: ${cleanError}`;
 }
 
+function extractTextFromMessageContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part: any) => {
+      if (part?.type === "text" && typeof part.text === "string") {
+        return part.text;
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function sanitizeMessageForUpstream(m: any): { role: string; content: string | any[] } {
+  if (m?.role === "user" && Array.isArray(m.content)) {
+    const validParts = m.content.filter((part: any) => {
+      if (!part || typeof part !== "object") return false;
+      if (part.type === "text" && typeof part.text === "string") return true;
+      if (part.type === "image_url" && typeof part.image_url?.url === "string") return true;
+      if (part.type === "file" && typeof part.file_id === "string" && part.file_id.trim()) {
+        return true;
+      }
+      return false;
+    });
+    if (validParts.length > 0) {
+      return { role: "user", content: validParts };
+    }
+  }
+  return {
+    role: String(m?.role || "user"),
+    content: extractTextFromMessageContent(m?.content),
+  };
+}
+
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
@@ -75,13 +110,21 @@ export async function action({ request }: ActionFunctionArgs) {
     messages = [],
     webSearch = false,
     model: clientModel,
+    temperature: clientTemperature,
   } = body;
 
-  // 1. Enforce 24-hour usage limit per account (2.00 CNY cap)
-  const { allowed } = await checkUser24hAllowed(session.sub, env);
+  const temperature =
+    typeof clientTemperature === "number" && Number.isFinite(clientTemperature)
+      ? Math.round(Math.min(1.5, Math.max(0, clientTemperature)) * 10) / 10
+      : 1.0;
+
+  // 1. Enforce sliding-window usage limits per account ($0.25 USD / 5h, $2.00 USD / 7d)
+  const { allowed, exceededWindow } = await checkUserUsageAllowed(session.sub, env);
   if (!allowed) {
+    const windowDesc =
+      exceededWindow === "5h" ? "5-hour usage capacity ($0.25)" : "7-day usage capacity ($2.00)";
     return sseNoticeResponse(
-      `[ChatJoePT Notice]: 24-hour usage capacity has been reached for this account. Please wait for your daily quota to refresh.`
+      `[ChatJoePT Notice]: ${windowDesc} has been reached for this account. Sliding window quota refreshes continuously as earlier usage expires.`
     );
   }
 
@@ -118,8 +161,8 @@ export async function action({ request }: ActionFunctionArgs) {
     systemPrompt += `\n\n[Web Search Enabled]: Live web search (\`deepseek_search\`) and URL reading (\`deepseek_fetch\`) tools are enabled. Use them whenever up-to-date facts, external webpages, or verification are helpful, and include cited URLs.`;
   }
 
-  const lastUserQuestion =
-    [...messages].reverse().find((m: any) => m.role === "user")?.content || "";
+  const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
+  const lastUserQuestion = extractTextFromMessageContent(lastUserMsg?.content);
 
   // Case 1: No API key configured -> Demo fallback
   if (!apiKey) {
@@ -167,7 +210,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const tools = getChatToolDefinitions(Boolean(webSearch));
   const conversationMessages: any[] = [
     { role: "system", content: systemPrompt },
-    ...messages.map((m: any) => ({ role: m.role, content: m.content })),
+    ...messages.map(sanitizeMessageForUpstream),
   ];
 
   const encoder = new TextEncoder();
@@ -176,7 +219,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const stream = new ReadableStream({
     async start(controller) {
       let emittedContentBytes = 0;
-      let totalCostCny = 0;
+      let totalCostUsd = 0;
       let totalTokensUsed = 0;
       let usageRecorded = false;
       let hardLimitStopped = false;
@@ -189,6 +232,7 @@ export async function action({ request }: ActionFunctionArgs) {
           const payload: Record<string, any> = {
             model: targetModel,
             messages: conversationMessages,
+            temperature,
             stream: true,
             stream_options: { include_usage: true },
             tools,
@@ -248,10 +292,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
               if (parsed.usage) {
                 usageRecorded = true;
-                totalCostCny += calculateCostCny({
+                totalCostUsd += calculateCostUsd({
                   promptTokens: parsed.usage.prompt_tokens,
                   completionTokens: parsed.usage.completion_tokens,
-                  promptCacheHitTokens: parsed.usage.prompt_cache_hit_tokens,
+                  promptCacheHitTokens:
+                    parsed.usage.prompt_cache_hit_tokens ??
+                    parsed.usage.prompt_tokens_details?.cached_tokens,
                   promptCacheMissTokens: parsed.usage.prompt_cache_miss_tokens,
                 });
                 totalTokensUsed += parsed.usage.total_tokens || 0;
@@ -375,15 +421,15 @@ export async function action({ request }: ActionFunctionArgs) {
         }
 
         if (!usageRecorded) {
-          totalCostCny = calculateCostCny({
+          totalCostUsd = calculateCostUsd({
             promptTokens: 800,
             completionTokens: 400,
           });
           totalTokensUsed = 1200;
         }
 
-        if (totalCostCny > 0) {
-          await recordUserUsage(session.sub, totalCostCny, totalTokensUsed, env).catch(
+        if (totalCostUsd > 0) {
+          await recordUserUsage(session.sub, totalCostUsd, totalTokensUsed, env).catch(
             console.error
           );
         }

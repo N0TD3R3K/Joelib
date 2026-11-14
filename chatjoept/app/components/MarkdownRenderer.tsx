@@ -66,26 +66,26 @@ function CodeBlock({
   // If inline code without language prefix and no newline
   if (!match && !codeText.includes("\n")) {
     return (
-      <code className="bg-[#2f2f2f] text-[#ececec] px-1.5 py-0.5 rounded text-xs font-mono font-medium">
+      <code className="bg-black/5 dark:bg-[#2f2f2f] text-[#0d0d0d] dark:text-[#ececec] px-1.5 py-0.5 rounded text-xs font-mono font-medium">
         {children}
       </code>
     );
   }
 
   return (
-    <div className="relative my-4 rounded-lg overflow-hidden border border-white/10 bg-[#0d0d0d]">
-      <div className="flex items-center justify-between px-4 py-1.5 bg-[#1e1e1e] text-xs text-gray-400 font-mono select-none border-b border-white/5">
+    <div className="relative my-4 rounded-lg overflow-hidden border border-black/10 dark:border-white/10 bg-[#f8f8f8] dark:bg-[#0d0d0d]">
+      <div className="flex items-center justify-between px-4 py-1.5 bg-[#efefef] dark:bg-[#1e1e1e] text-xs text-gray-600 dark:text-gray-400 font-mono select-none border-b border-black/5 dark:border-white/5">
         <span className="capitalize">{lang || "code"}</span>
         <button
           onClick={handleCopy}
           type="button"
-          className="flex items-center gap-1.5 hover:text-white transition-colors py-0.5 px-1.5 rounded"
+          className="flex items-center gap-1.5 hover:text-black dark:hover:text-white transition-colors py-0.5 px-1.5 rounded"
           title="Copy code"
         >
           {copied ? (
             <>
-              <Check className="w-3.5 h-3.5 text-green-400" />
-              <span className="text-green-400 text-xs">Copied!</span>
+              <Check className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+              <span className="text-green-600 dark:text-green-400 text-xs">Copied!</span>
             </>
           ) : (
             <>
@@ -95,7 +95,7 @@ function CodeBlock({
           )}
         </button>
       </div>
-      <div className="p-4 overflow-x-auto text-xs font-mono leading-relaxed text-gray-200">
+      <div className="p-4 overflow-x-auto text-xs font-mono leading-relaxed text-gray-800 dark:text-gray-200">
         <pre>
           <code>{codeText}</code>
         </pre>
@@ -108,7 +108,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
   const processedContent = preprocessLaTeX(content);
 
   return (
-    <div className="markdown-prose space-y-3 leading-relaxed text-[#ececec] text-sm md:text-base break-words">
+    <div className="markdown-prose space-y-3 leading-relaxed text-[#0d0d0d] dark:text-[#ececec] text-sm md:text-base break-words">
       <ReactMarkdown
         remarkPlugins={[
           remarkGfm,
@@ -125,24 +125,24 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           ol: ({ children }) => <ol className="list-decimal pl-5 my-2 space-y-1">{children}</ol>,
           li: ({ children }) => <li className="leading-6">{children}</li>,
           blockquote: ({ children }) => (
-            <blockquote className="border-l-4 border-[#10a37f] pl-4 my-2 text-gray-300 italic bg-white/5 py-1 rounded-r">
+            <blockquote className="border-l-4 border-[#10a37f] pl-4 my-2 text-gray-700 dark:text-gray-300 italic bg-black/5 dark:bg-white/5 py-1 rounded-r">
               {children}
             </blockquote>
           ),
           table: ({ children }) => (
-            <div className="my-4 overflow-x-auto rounded-lg border border-white/10">
-              <table className="min-w-full divide-y divide-white/10 text-xs md:text-sm">
+            <div className="my-4 overflow-x-auto rounded-lg border border-black/10 dark:border-white/10">
+              <table className="min-w-full divide-y divide-black/10 dark:divide-white/10 text-xs md:text-sm">
                 {children}
               </table>
             </div>
           ),
           th: ({ children }) => (
-            <th className="bg-[#1e1e1e] px-4 py-2 text-left font-semibold text-gray-200">
+            <th className="bg-[#f4f4f4] dark:bg-[#1e1e1e] px-4 py-2 text-left font-semibold text-gray-800 dark:text-gray-200">
               {children}
             </th>
           ),
           td: ({ children }) => (
-            <td className="px-4 py-2 border-t border-white/5 bg-[#171717]/60 text-gray-300">
+            <td className="px-4 py-2 border-t border-black/5 dark:border-white/5 bg-white dark:bg-[#171717]/60 text-gray-700 dark:text-gray-300">
               {children}
             </td>
           ),

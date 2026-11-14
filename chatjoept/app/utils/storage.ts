@@ -10,7 +10,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   baseUrl: "",
   model: "",
   systemPrompt: JOEGLISH_SYSTEM_PROMPT,
-  theme: "dark",
+  theme: "system",
+  temperature: 1.0,
 };
 
 export function getLocalSessions(): ChatSession[] {

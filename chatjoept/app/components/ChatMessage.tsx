@@ -38,31 +38,31 @@ function ThoughtBox({
   const [isOpen, setIsOpen] = useState(isThinking);
 
   return (
-    <div className="my-2.5 rounded-xl border border-white/10 bg-[#1c1c1c] overflow-hidden text-xs">
+    <div className="my-2.5 rounded-xl border border-black/10 dark:border-white/10 bg-[#f9f9f9] dark:bg-[#1c1c1c] overflow-hidden text-xs">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 py-2 flex items-center justify-between text-gray-400 hover:text-gray-200 transition-colors select-none"
+        className="w-full px-3 py-2 flex items-center justify-between text-gray-600 dark:text-gray-400 hover:text-black dark:hover:text-gray-200 transition-colors select-none"
       >
         <div className="flex items-center gap-2">
           <Brain
             className={`w-3.5 h-3.5 ${
-              isThinking ? "text-[#10a37f] animate-pulse" : "text-gray-400"
+              isThinking ? "text-[#10a37f] animate-pulse" : "text-gray-500 dark:text-gray-400"
             }`}
           />
-          <span className="font-medium text-gray-300">
+          <span className="font-medium text-gray-700 dark:text-gray-300">
             {isThinking ? "Thinking in Joeglish..." : "Thought process"}
           </span>
         </div>
         {isOpen ? (
-          <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+          <ChevronDown className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+          <ChevronRight className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
         )}
       </button>
 
       {isOpen && (
-        <div className="px-3 py-2 border-t border-white/5 text-gray-400 font-mono text-[11px] leading-relaxed max-h-60 overflow-y-auto whitespace-pre-wrap">
+        <div className="px-3 py-2 border-t border-black/5 dark:border-white/5 text-gray-600 dark:text-gray-400 font-mono text-[11px] leading-relaxed max-h-60 overflow-y-auto whitespace-pre-wrap">
           {thought}
         </div>
       )}
@@ -97,30 +97,44 @@ export function ChatMessage({
         {/* Render Attached Files Preview */}
         {message.attachments && message.attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 justify-end mb-1 max-w-[85%] sm:max-w-[75%]">
-            {message.attachments.map((file, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-2 bg-[#252525] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-gray-200 shadow-sm"
-              >
-                {file.type.startsWith("image/") ? (
-                  <ImageIcon className="w-3.5 h-3.5 text-[#10a37f]" />
-                ) : (
-                  <FileText className="w-3.5 h-3.5 text-[#10a37f]" />
-                )}
-                <div className="flex flex-col text-left">
-                  <span className="font-medium truncate max-w-[150px] text-[11px]">
-                    {file.name}
-                  </span>
-                  <span className="text-[10px] text-gray-400">
-                    {formatBytes(file.size)}
-                  </span>
+            {message.attachments.map((file, i) => {
+              const isImage =
+                file.kind === "image" || file.type.startsWith("image/");
+              return (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 bg-[#f4f4f4] dark:bg-[#252525] border border-black/10 dark:border-white/10 rounded-xl px-3 py-1.5 text-xs text-gray-800 dark:text-gray-200 shadow-sm"
+                >
+                  {isImage && file.content.startsWith("data:image/") ? (
+                    <img
+                      src={file.content}
+                      alt={file.name}
+                      className="w-8 h-8 rounded-md object-cover border border-black/10 dark:border-white/10 shrink-0"
+                    />
+                  ) : isImage ? (
+                    <ImageIcon className="w-3.5 h-3.5 text-[#10a37f]" />
+                  ) : (
+                    <FileText className="w-3.5 h-3.5 text-[#10a37f]" />
+                  )}
+                  <div className="flex flex-col text-left">
+                    <span className="font-medium truncate max-w-[150px] text-[11px]">
+                      {file.name}
+                    </span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                      {file.kind === "file"
+                        ? `${file.parsingPurpose === "rich_layout_recognition" ? "Rich Layout OCR" : "Parsed File"} · ${formatBytes(file.size)}`
+                        : isImage
+                        ? `Vision · ${formatBytes(file.size)}`
+                        : formatBytes(file.size)}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
-        <div className="bg-[#2f2f2f] text-[#ececec] text-sm md:text-base px-4 py-2.5 rounded-[22px] max-w-[85%] sm:max-w-[75%] break-words whitespace-pre-wrap leading-relaxed shadow-sm">
+        <div className="bg-[#f4f4f4] dark:bg-[#2f2f2f] text-[#0d0d0d] dark:text-[#ececec] text-sm md:text-base px-4 py-2.5 rounded-[22px] max-w-[85%] sm:max-w-[75%] break-words whitespace-pre-wrap leading-relaxed shadow-sm">
           {message.content}
         </div>
       </div>
@@ -172,7 +186,7 @@ export function ChatMessage({
               return (
                 <div
                   key={tool}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1e1e1e] border border-white/5 text-[11px] text-[#10a37f] font-medium"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#f4f4f4] dark:bg-[#1e1e1e] border border-black/5 dark:border-white/5 text-[11px] text-[#0e8c6d] dark:text-[#10a37f] font-medium"
                 >
                   <Globe className="w-3 h-3" />
                   <span>{label}</span>
@@ -180,7 +194,7 @@ export function ChatMessage({
               );
             })}
             {message.webSearch && !message.toolsUsed?.includes("deepseek_search") && (
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1e1e1e] border border-white/5 text-[11px] text-[#10a37f] font-medium">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#f4f4f4] dark:bg-[#1e1e1e] border border-black/5 dark:border-white/5 text-[11px] text-[#0e8c6d] dark:text-[#10a37f] font-medium">
                 <Globe className="w-3 h-3" />
                 <span>Searched the web</span>
               </div>
@@ -195,11 +209,11 @@ export function ChatMessage({
           />
         )}
 
-        <div className="text-gray-100">
+        <div className="text-[#0d0d0d] dark:text-gray-100">
           {mainContent ? (
             <MarkdownRenderer content={mainContent} />
           ) : isCurrentlyThinking ? (
-            <div className="text-xs text-gray-400 italic">Formulating Joeglish reasoning...</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 italic">Formulating Joeglish reasoning...</div>
           ) : null}
 
           {isStreaming && (
@@ -209,14 +223,14 @@ export function ChatMessage({
 
         {/* Action Toolbar */}
         {!isStreaming && message.content && (
-          <div className="flex items-center gap-2 mt-3 pt-1 text-gray-400 text-xs">
+          <div className="flex items-center gap-2 mt-3 pt-1 text-gray-500 dark:text-gray-400 text-xs">
             <button
               onClick={handleCopy}
-              className="p-1 rounded hover:bg-white/5 hover:text-white transition-colors"
+              className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 hover:text-black dark:hover:text-white transition-colors"
               title="Copy message"
             >
               {copied ? (
-                <Check className="w-3.5 h-3.5 text-green-400" />
+                <Check className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
               ) : (
                 <Copy className="w-3.5 h-3.5" />
               )}
@@ -224,8 +238,8 @@ export function ChatMessage({
 
             <button
               onClick={() => setFeedback(feedback === "up" ? null : "up")}
-              className={`p-1 rounded hover:bg-white/5 transition-colors ${
-                feedback === "up" ? "text-green-400" : "hover:text-white"
+              className={`p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
+                feedback === "up" ? "text-green-600 dark:text-green-400" : "hover:text-black dark:hover:text-white"
               }`}
               title="Good response"
             >
@@ -234,8 +248,8 @@ export function ChatMessage({
 
             <button
               onClick={() => setFeedback(feedback === "down" ? null : "down")}
-              className={`p-1 rounded hover:bg-white/5 transition-colors ${
-                feedback === "down" ? "text-red-400" : "hover:text-white"
+              className={`p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${
+                feedback === "down" ? "text-red-500 dark:text-red-400" : "hover:text-black dark:hover:text-white"
               }`}
               title="Bad response"
             >
@@ -245,7 +259,7 @@ export function ChatMessage({
             {onRegenerate && (
               <button
                 onClick={onRegenerate}
-                className="p-1 rounded hover:bg-white/5 hover:text-white transition-colors flex items-center gap-1"
+                className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 hover:text-black dark:hover:text-white transition-colors flex items-center gap-1"
                 title="Regenerate response"
               >
                 <RotateCcw className="w-3.5 h-3.5" />

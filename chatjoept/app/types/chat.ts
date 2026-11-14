@@ -1,8 +1,13 @@
+export type AttachmentKind = "image" | "file" | "text";
+
 export interface Attachment {
   name: string;
   size: number;
   type: string;
-  content: string; // text or base64 data
+  kind?: AttachmentKind;
+  content: string; // data URL (image), empty/summary (file), or plain text (text)
+  fileId?: string;
+  parsingPurpose?: "rich_layout_recognition" | "user_data";
 }
 
 export interface Message {
@@ -30,6 +35,7 @@ export interface UserSettings {
   model: string;
   systemPrompt: string;
   theme: "dark" | "light" | "system";
+  temperature?: number;
 }
 
 export interface AuthUser {
@@ -41,7 +47,10 @@ export interface AuthUser {
 }
 
 export interface UserQuotas {
-  usagePercent: number;
+  usage5hPercent: number;
+  usage7dPercent: number;
+  uploadedFilesBytes: number;
+  uploadedFilesPercent: number;
   chatPercent: number;
   sharePercent: number;
   freePercent: number;

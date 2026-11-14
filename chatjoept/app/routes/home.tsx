@@ -67,8 +67,13 @@ export default function Home() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState("jpt-6.1-sol");
+  const [theme, setTheme] = useState<"dark" | "light" | "system">("system");
+  const [temperature, setTemperature] = useState<number>(1.0);
   const [quotas, setQuotas] = useState<UserQuotas>({
-    usagePercent: 0,
+    usage5hPercent: 0,
+    usage7dPercent: 0,
+    uploadedFilesBytes: 0,
+    uploadedFilesPercent: 0,
     chatPercent: 0,
     sharePercent: 0,
     freePercent: 100,
@@ -147,6 +152,15 @@ export default function Home() {
     if (loadedSettings.model) {
       setSelectedModel(loadedSettings.model);
     }
+    if (loadedSettings.theme) {
+      setTheme(loadedSettings.theme);
+    }
+    if (
+      typeof loadedSettings.temperature === "number" &&
+      Number.isFinite(loadedSettings.temperature)
+    ) {
+      setTemperature(loadedSettings.temperature);
+    }
 
     const loadedSessions = getLocalSessions();
     setSessions(loadedSessions);
@@ -163,6 +177,24 @@ export default function Home() {
       fetchServerDialogs();
     }
   }, [isAuthenticated]);
+
+  // Apply theme class to document root and listen to OS changes in Auto mode
+  useEffect(() => {
+    const root = document.documentElement;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+
+    const applyTheme = () => {
+      const useDark = theme === "dark" || (theme === "system" && media.matches);
+      root.classList.toggle("dark", useDark);
+    };
+
+    applyTheme();
+
+    if (theme === "system") {
+      media.addEventListener("change", applyTheme);
+      return () => media.removeEventListener("change", applyTheme);
+    }
+  }, [theme]);
 
   // Sync sessions changes to localStorage
   const updateSessions = (newSessions: ChatSession[]) => {
@@ -369,17 +401,45 @@ export default function Home() {
       ).length;
 
       const formattedChatMessages = baseMessages.map((m) => {
-        let fullText = m.content;
-        if (m.attachments && m.attachments.length > 0) {
-          const filesSummary = m.attachments
-            .map((att) => `[File Attachment: ${att.name}]\n\`\`\`\n${att.content}\n\`\`\``)
-            .join("\n\n");
-          fullText = fullText ? `${fullText}\n\n${filesSummary}` : filesSummary;
+        if (!m.attachments || m.attachments.length === 0) {
+          return { role: m.role, content: m.content };
         }
-        return {
-          role: m.role,
-          content: fullText,
-        };
+
+        const multimodalParts: Array<Record<string, any>> = [];
+        const inlineTextAttachments: string[] = [];
+
+        for (const att of m.attachments) {
+          const kind =
+            att.kind || (att.type.startsWith("image/") ? "image" : "text");
+          if (att.fileId && (kind === "file" || kind === "image")) {
+            multimodalParts.push({
+              type: "file",
+              file_id: att.fileId,
+            });
+          } else if (kind === "image" && att.content.startsWith("data:image/")) {
+            multimodalParts.push({
+              type: "image_url",
+              image_url: { url: att.content },
+            });
+          } else if (att.content) {
+            inlineTextAttachments.push(
+              `[File Attachment: ${att.name}]\n\`\`\`\n${att.content}\n\`\`\``
+            );
+          }
+        }
+
+        const combinedText = [m.content, ...inlineTextAttachments]
+          .filter(Boolean)
+          .join("\n\n");
+
+        if (m.role === "user" && multimodalParts.length > 0) {
+          if (combinedText) {
+            multimodalParts.push({ type: "text", text: combinedText });
+          }
+          return { role: m.role, content: multimodalParts };
+        }
+
+        return { role: m.role, content: combinedText };
       });
 
       const res = await fetch("/api/chat", {
@@ -391,6 +451,7 @@ export default function Home() {
           messages: formattedChatMessages,
           webSearch,
           model: selectedModel,
+          temperature,
         }),
         signal: abortController.signal,
       });
@@ -588,7 +649,47 @@ export default function Home() {
     setActiveSessionIdState(null);
     setActiveSessionId(null);
     setQuotas({
-      usagePercent: 0,
+      usage5hPercent: 0,
+      usage7dPercent: 0,
+      uploadedFilesBytes: 0,
+      uploadedFilesPercent: 0,
+      chatPercent: 0,
+      sharePercent: 0,
+      freePercent: 100,
+      isSoftLimited: false,
+      isHardLimited: false,
+    });
+  };
+
+  // Handle Delete Account (removes ChatJoePT data only; leaves JoeAuth intact)
+  const handleDeleteAccount = async () => {
+    const res = await fetch("/api/user", { method: "DELETE" });
+    if (!res.ok) {
+      const errData: any = await res.json().catch(() => ({}));
+      throw new Error(errData.error || "Failed to delete ChatJoePT account");
+    }
+    if (isStreaming) {
+      handleStopStreaming();
+    }
+    try {
+      localStorage.clear();
+    } catch {
+      // Ignore storage errors
+    }
+    setSettingsOpen(false);
+    setShareModalOpen(false);
+    setIsAuthenticated(false);
+    setUser(null);
+    setSessions([]);
+    setActiveSessionIdState(null);
+    setTheme("system");
+    setTemperature(1.0);
+    setSelectedModel("jpt-6.1-sol");
+    setQuotas({
+      usage5hPercent: 0,
+      usage7dPercent: 0,
+      uploadedFilesBytes: 0,
+      uploadedFilesPercent: 0,
       chatPercent: 0,
       sharePercent: 0,
       freePercent: 100,
@@ -603,7 +704,7 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#212121] text-[#ececec]">
+    <div className="flex h-screen w-screen overflow-hidden bg-white dark:bg-[#212121] text-gray-900 dark:text-[#ececec] transition-colors duration-200">
       {/* Sidebar */}
       <Sidebar
         isOpen={sidebarOpen}
@@ -627,13 +728,13 @@ export default function Home() {
       {/* Main Chat View Area */}
       <main className="flex-1 flex flex-col h-full min-w-0 relative">
         {/* Top Navigation Bar */}
-        <header className="h-14 border-b border-white/5 flex items-center justify-between px-3 md:px-4 z-10 shrink-0 select-none bg-[#212121]/80 backdrop-blur-md">
+        <header className="h-14 border-b border-black/5 dark:border-white/5 flex items-center justify-between px-3 md:px-4 z-10 shrink-0 select-none bg-white/80 dark:bg-[#212121]/80 backdrop-blur-md">
           <div className="flex items-center gap-2">
             {!sidebarOpen && (
               <button
                 onClick={() => setSidebarOpen(true)}
                 type="button"
-                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+                className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                 title="Open sidebar"
               >
                 <PanelLeft className="w-5 h-5" />
@@ -654,7 +755,7 @@ export default function Home() {
               onClick={handleNewChat}
               type="button"
               disabled={quotas.isSoftLimited}
-              className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors sm:hidden"
+              className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors sm:hidden"
               title={quotas.isSoftLimited ? "Memory full" : "New chat"}
             >
               <SquarePen className="w-4 h-4" />
@@ -668,7 +769,7 @@ export default function Home() {
                 currentSession.messages.length === 0 ||
                 quotas.isSoftLimited
               }
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-white/5 border border-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 border border-black/10 dark:border-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               title={
                 quotas.isSoftLimited
                   ? "Memory full — manage shared links or delete chats in Settings"
@@ -713,6 +814,7 @@ export default function Home() {
           onStop={handleStopStreaming}
           isStreaming={isStreaming}
           softLimitReached={quotas.isSoftLimited}
+          onQuotasUpdated={setQuotas}
         />
       </main>
 
@@ -728,6 +830,17 @@ export default function Home() {
         onQuotasUpdated={setQuotas}
         onClearChats={handleClearAllChats}
         onLogout={handleLogout}
+        onDeleteAccount={handleDeleteAccount}
+        theme={theme}
+        onThemeChange={(nextTheme) => {
+          setTheme(nextTheme);
+          saveLocalSettings({ theme: nextTheme });
+        }}
+        temperature={temperature}
+        onTemperatureChange={(nextTemp) => {
+          setTemperature(nextTemp);
+          saveLocalSettings({ temperature: nextTemp });
+        }}
       />
 
       {/* Share Modal */}

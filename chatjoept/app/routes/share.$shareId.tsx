@@ -29,17 +29,17 @@ export default function SharedChatView() {
 
   if (!dialog) {
     return (
-      <div className="min-h-screen bg-[#212121] text-[#ececec] flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-4 text-gray-400">
+      <div className="min-h-screen bg-white dark:bg-[#212121] text-[#0d0d0d] dark:text-[#ececec] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-center mb-4 text-gray-500 dark:text-gray-400">
           <MessageSquare className="w-8 h-8" />
         </div>
         <h1 className="text-2xl font-bold mb-2">Shared Chat Not Found</h1>
-        <p className="text-gray-400 text-sm max-w-md mb-6">
+        <p className="text-gray-600 dark:text-gray-400 text-sm max-w-md mb-6">
           This shared conversation snapshot may have been deleted by the author or never existed.
         </p>
         <Link
           to="/"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-black font-semibold text-sm hover:bg-gray-200 transition-colors"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-black dark:bg-white text-white dark:text-black font-semibold text-sm hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" /> Return to ChatJoePT
         </Link>
@@ -56,9 +56,9 @@ export default function SharedChatView() {
   });
 
   return (
-    <div className="min-h-screen bg-[#212121] text-[#ececec] flex flex-col selection:bg-[#10a37f]/30">
+    <div className="min-h-screen bg-white dark:bg-[#212121] text-[#0d0d0d] dark:text-[#ececec] flex flex-col selection:bg-[#10a37f]/30">
       {/* Top Header */}
-      <header className="sticky top-0 z-30 h-14 bg-[#212121]/90 backdrop-blur border-b border-white/10 px-4 md:px-8 flex items-center justify-between">
+      <header className="sticky top-0 z-30 h-14 bg-white/90 dark:bg-[#212121]/90 backdrop-blur border-b border-black/10 dark:border-white/10 px-4 md:px-8 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link
             to="/"
@@ -68,11 +68,11 @@ export default function SharedChatView() {
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#10a37f] to-emerald-400 flex items-center justify-center text-white shadow-sm">
               <Sparkles className="w-4 h-4 fill-white" />
             </div>
-            <span className="font-semibold text-base tracking-tight text-white hidden sm:inline">
+            <span className="font-semibold text-base tracking-tight text-[#0d0d0d] dark:text-white hidden sm:inline">
               ChatJoePT
             </span>
           </Link>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-gray-300 font-medium">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300 font-medium">
             Shared Snapshot
           </span>
         </div>
@@ -80,9 +80,9 @@ export default function SharedChatView() {
         <div className="flex items-center gap-3">
           <Link
             to="/"
-            className="px-4 py-1.5 rounded-full bg-white text-black font-semibold text-xs md:text-sm hover:bg-gray-200 transition-all shadow-sm flex items-center gap-1.5"
+            className="px-4 py-1.5 rounded-full bg-black dark:bg-white text-white dark:text-black font-semibold text-xs md:text-sm hover:bg-gray-800 dark:hover:bg-gray-200 transition-all shadow-sm flex items-center gap-1.5"
           >
-            <Sparkles className="w-3.5 h-3.5 fill-black" />
+            <Sparkles className="w-3.5 h-3.5 fill-current" />
             <span>Open in ChatJoePT</span>
           </Link>
         </div>
@@ -91,18 +91,18 @@ export default function SharedChatView() {
       {/* Main Container */}
       <main className="flex-1 w-full max-w-3xl mx-auto px-4 py-8">
         {/* Title Card */}
-        <div className="mb-8 pb-6 border-b border-white/10">
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white mb-3">
+        <div className="mb-8 pb-6 border-b border-black/10 dark:border-white/10">
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-[#0d0d0d] dark:text-white mb-3">
             {dialog.title}
           </h1>
-          <div className="flex flex-wrap items-center gap-4 text-xs text-gray-400">
+          <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
             <div className="flex items-center gap-1.5">
               <Calendar className="w-3.5 h-3.5" />
               <span>Snapshot from {formattedDate}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Bot className="w-3.5 h-3.5 text-[#10a37f]" />
-              <span className="font-medium text-gray-300">{modelLabel}</span>
+              <span className="font-medium text-gray-700 dark:text-gray-300">{modelLabel}</span>
             </div>
           </div>
         </div>
@@ -120,7 +120,7 @@ export default function SharedChatView() {
       </main>
 
       {/* Footer */}
-      <footer className="py-6 border-t border-white/5 text-center text-xs text-gray-500">
+      <footer className="py-6 border-t border-black/5 dark:border-white/5 text-center text-xs text-gray-500">
         <p>ChatJoePT &bull; United Taylors Joe Universe</p>
       </footer>
     </div>
