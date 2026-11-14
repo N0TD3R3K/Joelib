@@ -11,8 +11,7 @@
 	"vars": {
 		"LLM_API_URL": "https://api.deepseek.com",
 		"LLM_BASE_MODEL": "deepseek-chat",
-		"JOEAUTH_ISSUER": "https://auth.joe-univer.se",
-		"CANONICAL_ORIGIN": ""
+		"JOEAUTH_ISSUER": "https://auth.joe-univer.se"
 	},
 	"d1_databases": [
 		{

@@ -2,7 +2,7 @@
 
 > **The Official ChatGPT-Style Assistant of the Joe Universe (`Joelib`)**  
 > Powered by Cloudflare Workers & Cloudflare D1 with React Router v8, Tailwind CSS, and KaTeX.  
-> **Target Domain**: [https://chat.joe-univer.se](https://chat.joe-univer.se) (with `chatjoept.waynexu2020.workers.dev` permanently redirecting once `CANONICAL_ORIGIN` is configured)
+> **Domain**: [https://chat.joe-univer.se](https://chat.joe-univer.se)
 
 ---
 
@@ -72,7 +72,7 @@ chatjoept/
 │   │   └── tools.server.ts    # DeepSeek Search/Fetch & N0TD3R3K/Joelib lookup tools
 │   └── types/chat.ts
 ├── workers/
-│   └── app.ts                 # Cloudflare Worker entrypoint + CANONICAL_ORIGIN 301 redirect
+│   └── app.ts                 # Cloudflare Worker entrypoint
 └── wrangler.jsonc             # D1 binding (CHATJOEPT_DB) & runtime variables
 ```
 
@@ -97,7 +97,6 @@ chatjoept/
 | Variable | Type | Description |
 |---|---|---|
 | `JOEAUTH_ISSUER` | Var | JoeAuth issuer URL (`https://auth.joe-univer.se`) |
-| `CANONICAL_ORIGIN` | Var | Target origin (set to `https://chat.joe-univer.se` when cutover is ready to 301-redirect `workers.dev`) |
 | `LLM_API_URL` | Var | DeepSeek base URL (`https://api.deepseek.com`) |
 | `LLM_BASE_MODEL` | Var | Upstream base model (`deepseek-chat`) |
 | `JOEAUTH_CLIENT_ID` | Var / Secret | OAuth client ID registered in JoeAuth |
