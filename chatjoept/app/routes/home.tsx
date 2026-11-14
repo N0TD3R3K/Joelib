@@ -269,7 +269,8 @@ export default function Home() {
   const handleSendMessage = async (
     textToSend?: string,
     attachmentsToSend?: Attachment[],
-    webSearchToSend?: boolean
+    webSearchToSend?: boolean,
+    overrideSession?: ChatSession
   ) => {
     const content = (textToSend !== undefined ? textToSend : input).trim();
     const attachments = attachmentsToSend || [];
@@ -282,8 +283,9 @@ export default function Home() {
     setInput("");
 
     // Ensure there is an active session
-    let sessionId = activeSessionId;
-    let targetSession = sessions.find((s) => s.id === sessionId);
+    let targetSession =
+      overrideSession || sessions.find((s) => s.id === activeSessionId);
+    let sessionId = targetSession?.id || activeSessionId;
 
     if (!targetSession) {
       const newSession: ChatSession = {
@@ -298,7 +300,6 @@ export default function Home() {
       sessionId = newSession.id;
       setActiveSessionIdState(sessionId);
       setActiveSessionId(sessionId);
-      setSessions((prev) => [newSession, ...prev]);
     }
 
     const userMessage: Message = {
@@ -318,7 +319,8 @@ export default function Home() {
       webSearch,
     };
 
-    const updatedMessages = [...targetSession.messages, userMessage, assistantMessage];
+    const baseMessages = [...targetSession.messages, userMessage];
+    const updatedMessages = [...baseMessages, assistantMessage];
 
     // Auto-title session from first user message
     const updatedTitle =
@@ -343,12 +345,30 @@ export default function Home() {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
+    let streamedText = "";
+    let hasStartedReasoning = false;
+    let hasClosedReasoning = false;
+    const toolsUsed: string[] = [];
+
+    const buildFinishedSession = (finalContent: string): ChatSession => ({
+      ...nextSession,
+      messages: [
+        ...baseMessages,
+        {
+          ...assistantMessage,
+          content: finalContent,
+          toolsUsed: toolsUsed.length > 0 ? [...toolsUsed] : undefined,
+        },
+      ],
+      updatedAt: Date.now(),
+    });
+
     try {
       const existingDialogBytes = new TextEncoder().encode(
-        JSON.stringify([...targetSession.messages, userMessage])
+        JSON.stringify(baseMessages)
       ).length;
 
-      const formattedChatMessages = [...targetSession.messages, userMessage].map((m) => {
+      const formattedChatMessages = baseMessages.map((m) => {
         let fullText = m.content;
         if (m.attachments && m.attachments.length > 0) {
           const filesSummary = m.attachments
@@ -385,11 +405,7 @@ export default function Home() {
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let streamedText = "";
       let buffer = "";
-      let hasStartedReasoning = false;
-      let hasClosedReasoning = false;
-      let toolsUsed: string[] = [];
 
       while (true) {
         const { value, done } = await reader.read();
@@ -481,59 +497,46 @@ export default function Home() {
       }
 
       // Final save to localStorage with complete streamed text and sync to D1 server
-      let finalDialogToSync: ChatSession | null = null;
+      const finishedDialog = buildFinishedSession(streamedText);
       setSessions((currentSessions) => {
-        const updated = currentSessions.map((s) => {
-          if (s.id !== sessionId) return s;
-          const msgs = [...s.messages];
-          const lastIdx = msgs.length - 1;
-          if (lastIdx >= 0 && msgs[lastIdx].role === "assistant") {
-            msgs[lastIdx] = {
-              ...msgs[lastIdx],
-              content: streamedText,
-              toolsUsed: toolsUsed.length > 0 ? [...toolsUsed] : undefined,
-            };
-          }
-          const finished = { ...s, messages: msgs, updatedAt: Date.now() };
-          finalDialogToSync = finished;
-          return finished;
-        });
+        const updated = currentSessions.map((s) =>
+          s.id === sessionId ? finishedDialog : s
+        );
         saveLocalSessions(updated);
         return updated;
       });
 
-      if (finalDialogToSync) {
-        await syncDialogToServer(finalDialogToSync, true);
-      }
+      await syncDialogToServer(finishedDialog, true);
     } catch (err: any) {
-      if (err.name !== "AbortError") {
-        console.error("Chat streaming error:", err);
-        let errorDialogToSync: ChatSession | null = null;
+      if (err.name === "AbortError") {
+        // Persist any partial output generated before user stopped
+        if (hasStartedReasoning && !hasClosedReasoning) {
+          streamedText += "</think>\n\n";
+        }
+        const abortedDialog = buildFinishedSession(streamedText);
         setSessions((currentSessions) => {
-          const updated = currentSessions.map((s) => {
-            if (s.id !== sessionId) return s;
-            const msgs = [...s.messages];
-            const lastIdx = msgs.length - 1;
-            if (lastIdx >= 0 && msgs[lastIdx].role === "assistant") {
-              const currentContent = msgs[lastIdx].content;
-              msgs[lastIdx] = {
-                ...msgs[lastIdx],
-                content:
-                  currentContent +
-                  `\n\n*[ChatJoePT Error]: ${err.message || "Failed to communicate with service"}*`,
-              };
-            }
-            const errorSession = { ...s, messages: msgs };
-            errorDialogToSync = errorSession;
-            return errorSession;
-          });
+          const updated = currentSessions.map((s) =>
+            s.id === sessionId ? abortedDialog : s
+          );
+          saveLocalSessions(updated);
+          return updated;
+        });
+        await syncDialogToServer(abortedDialog, true);
+      } else {
+        console.error("Chat streaming error:", err);
+        const errorContent =
+          streamedText +
+          `\n\n*[ChatJoePT Error]: ${err.message || "Failed to communicate with service"}*`;
+        const errorDialog = buildFinishedSession(errorContent);
+        setSessions((currentSessions) => {
+          const updated = currentSessions.map((s) =>
+            s.id === sessionId ? errorDialog : s
+          );
           saveLocalSessions(updated);
           return updated;
         });
 
-        if (errorDialogToSync) {
-          await syncDialogToServer(errorDialogToSync, false);
-        }
+        await syncDialogToServer(errorDialog, false);
       }
     } finally {
       setIsStreaming(false);
@@ -569,7 +572,7 @@ export default function Home() {
     const nextSessions = sessions.map((s) => (s.id === currentSession.id ? nextSession : s));
     updateSessions(nextSessions);
 
-    handleSendMessage(lastUserPrompt, lastAttachments, lastWebSearch);
+    handleSendMessage(lastUserPrompt, lastAttachments, lastWebSearch, nextSession);
   };
 
   // Handle Logout (clears only ChatJoePT session cookie)
