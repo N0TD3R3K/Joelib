@@ -69,6 +69,9 @@ The Joe Wiki, see the Wiki page of this repository.
 - **JoeLang Studio Online** by Derek Li
 
   [JoeLang Studio Website](https://joelang-studio.derekli.dev)
+-**Joe Units of Joesurement** by Matthew and Frank
+  A system used by the people of the Joeniverse to quantify numbers
+  https://github.com/N0TD3R3K/Joelib/blob/7e22487ac7b825504d1a60e1e0d80f0da6ad3e6f/Joe%20Units%20of%20Joesurements.pdf
 
 - **J++ header** by Joe Jin
 
