@@ -17,10 +17,13 @@
     itemKind: $("#item-kind"), itemName: $("#item-name"), itemParent: $("#item-parent"), templateLabel: $("#template-label"), templateChoice: $("#template-choice"), itemNote: $("#item-note"),
     renameDialog: $("#rename-dialog"), renameForm: $("#rename-form"), renameTitle: $("#rename-title"), renameName: $("#rename-name"), renameNote: $("#rename-note"),
     deleteDialog: $("#delete-dialog"), deleteForm: $("#delete-form"), deleteTitle: $("#delete-title"), deleteWarning: $("#delete-warning"), skipDelete: $("#skip-delete-warning"),
-    inputDialog: $("#input-dialog"), inputForm: $("#input-form"), inputPrompt: $("#input-prompt"), inputType: $("#input-type"), inputValue: $("#input-value"), inputError: $("#input-error")
+    inputDialog: $("#input-dialog"), inputForm: $("#input-form"), inputPrompt: $("#input-prompt"), inputType: $("#input-type"), inputValue: $("#input-value"), inputError: $("#input-error"),
+    accountMenu: $("#account-menu"), accountButton: $("#account-button"), accountDropdown: $("#account-dropdown"), accountAvatar: $("#account-avatar"), accountLabel: $("#account-label"), accountEmail: $("#account-email"), accountSettings: $("#account-settings-button"),
+    profileDialog: $("#profile-dialog"), profileForm: $("#profile-form"), profileEmail: $("#profile-email"), profileName: $("#profile-name"), profileNote: $("#profile-note")
   };
   const STORAGE = "joelang-studio-1.0-workspace";
   const THEME = "joelang-studio-1.0-theme";
+  const PROFILE_PREFIX = "joelang-studio-1.0-profile:";
   const FILE_TYPES = new Set(["file", "folder", "package"]);
   const keywordWords = core.completions().map((item) => item.word);
   const keywordPattern = keywordWords.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
@@ -33,6 +36,9 @@
   let completionIndex = 0;
   let inputResolve = null;
   let saveTimer = 0;
+  let compileTimer = 0;
+  let sessionEmail = "";
+  let profileName = "";
 
   const starter = `jinport "std/joemath" as math
 
@@ -75,8 +81,17 @@ show greeter.greet("Joe")`;
       openIds = (saved.openIds || []).filter((item) => valid.some((file) => file.id === item && file.type === "file")); if (!openIds.length) openIds = [activeId];
     } catch { /* A corrupt saved workspace never blocks the starter workspace. */ }
   }
-  function persistSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { localStorage.setItem(STORAGE, JSON.stringify({ version: 1, activeId, openIds, files: files.map(({ modified, ...item }) => item) })); } catch { /* Browser privacy settings can disable local storage. */ } }, 200); }
+  function workspaceSnapshot() { return { version: 1, activeId, openIds, files: files.map(({ modified, ...item }) => item) }; }
+  function persistWorkspace() { clearTimeout(saveTimer); saveTimer = 0; try { localStorage.setItem(STORAGE, JSON.stringify(workspaceSnapshot())); } catch { /* Browser privacy settings can disable local storage. */ } }
+  function persistSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(persistWorkspace, 200); }
   function setTheme(theme) { el.studio.dataset.theme = theme; $("#theme-button").textContent = theme === "dark" ? "☾" : "☀"; try { localStorage.setItem(THEME, theme); } catch {} }
+  function profileKey() { return sessionEmail ? `${PROFILE_PREFIX}${sessionEmail.toLowerCase()}` : ""; }
+  function renderAccount() { const display = profileName || sessionEmail || "Signed in"; el.accountLabel.textContent = display; el.accountEmail.textContent = sessionEmail || "Cloudflare Access verified your session."; el.accountAvatar.textContent = display.trim().charAt(0).toUpperCase() || "?"; }
+  function hideAccountMenu() { el.accountDropdown.hidden = true; el.accountButton.setAttribute("aria-expanded", "false"); }
+  function toggleAccountMenu() { const willOpen = el.accountDropdown.hidden; el.accountDropdown.hidden = !willOpen; el.accountButton.setAttribute("aria-expanded", String(willOpen)); }
+  function openProfileSettings() { hideAccountMenu(); el.profileEmail.textContent = sessionEmail || "Verified Cloudflare Access session"; el.profileName.value = profileName; el.profileNote.textContent = "Saved only in this browser."; el.profileDialog.showModal(); setTimeout(() => el.profileName.focus(), 0); }
+  function saveProfile() { profileName = el.profileName.value.trim().replace(/\s+/g, " "); const key = profileKey(); try { if (key && profileName) localStorage.setItem(key, profileName); else if (key) localStorage.removeItem(key); } catch {} renderAccount(); el.profileDialog.close(); el.runtimeStatus.textContent = "Profile saved locally"; }
+  async function loadSession() { try { const response = await fetch("/api/session", { cache: "no-store", credentials: "same-origin" }); const data = response.ok ? await response.json() : null; sessionEmail = typeof data?.email === "string" ? data.email.trim().toLowerCase() : ""; const saved = sessionEmail ? localStorage.getItem(profileKey()) : ""; profileName = typeof saved === "string" ? saved.trim() : ""; } catch { sessionEmail = ""; profileName = ""; } renderAccount(); }
 
   function renderTree() {
     const fragment = document.createDocumentFragment();
@@ -123,6 +138,7 @@ show greeter.greet("Joe")`;
     const file = activeFile(); if (!file) return; const result = core.compile(file.content, { fileName: file.name }); const errors = result.diagnostics.filter((item) => item.level === "error");
     el.compile.textContent = errors.length ? `${errors.length} error${errors.length === 1 ? "" : "s"}` : "Compiled"; el.compile.style.color = errors.length ? "var(--red)" : "var(--green)"; diagnosticsList(result.diagnostics); el.projection.textContent = result.code; return result;
   }
+  function scheduleCompile() { clearTimeout(compileTimer); compileTimer = setTimeout(() => { compileTimer = 0; compileActive(); }, 90); }
   function jumpTo(line, column) { const lines = el.editor.value.split("\n"); let position = 0; for (let index = 0; index < Math.max(0, line - 1); index += 1) position += lines[index].length + 1; position += Math.max(0, column - 1); el.editor.focus(); el.editor.selectionStart = el.editor.selectionEnd = position; updateCursor(); el.editor.scrollTop = Math.max(0, (line - 3) * editorFontLine); }
   function updateCursor() { const before = el.editor.value.slice(0, el.editor.selectionStart); const line = before.split("\n").length; const column = before.length - before.lastIndexOf("\n"); el.cursor.textContent = `Ln ${line}, Col ${column}`; }
 
@@ -134,13 +150,18 @@ show greeter.greet("Joe")`;
     const prior = el.editor.value.slice(0, el.editor.selectionStart); const lines = prior.split("\n"); el.completion.style.top = `${Math.min(el.editor.clientHeight - 48, 14 + lines.length * editorFontLine - el.editor.scrollTop)}px`; el.completion.style.left = `${Math.min(el.editor.clientWidth - 278, 62 + (lines[lines.length - 1].length * 7.8) - el.editor.scrollLeft)}px`; el.completion.hidden = false;
   }
   function complete(item) { const word = currentWord(); if (!word) return hideCompletions(); replaceRange(word.start, word.end, item.word); hideCompletions(); }
-  function replaceRange(start, end, text, caret = start + text.length) { el.editor.setRangeText(text, start, end, "end"); el.editor.selectionStart = el.editor.selectionEnd = caret; handleEditorChange(); }
-  function handleEditorChange() { const file = activeFile(); if (!file) return; file.content = el.editor.value; file.modified = true; renderEditor(); renderTabs(); compileActive(); updateCursor(); updateCompletions(); persistSoon(); }
+  function replaceRange(start, end, text, caret = start + text.length) { el.editor.setRangeText(text, start, end, "preserve"); const position = Math.max(0, Math.min(caret, el.editor.value.length)); el.editor.setSelectionRange(position, position); handleEditorChange(); }
+  function handleEditorChange() { const file = activeFile(); if (!file) return; file.content = el.editor.value; file.modified = true; renderEditor(); renderTabs(); updateCursor(); updateCompletions(); scheduleCompile(); persistSoon(); }
   function insertPair(open, close) { const start = el.editor.selectionStart, end = el.editor.selectionEnd, selected = el.editor.value.slice(start, end); replaceRange(start, end, open + selected + close, start + open.length + selected.length); }
   function handleEnter() {
     const start = el.editor.selectionStart, end = el.editor.selectionEnd, text = el.editor.value; const before = text.slice(0, start), after = text.slice(end); const lineStart = before.lastIndexOf("\n") + 1; const lineText = before.slice(lineStart); const indent = (/^\s*/.exec(lineText) || [""])[0];
-    if (/\{\s*$/.test(before) && /^\s*}/.test(after)) replaceRange(start, end, `\n${indent}  \n${indent}`, start + indent.length + 3);
-    else { const extra = /\{\s*$/.test(lineText) ? "  " : ""; replaceRange(start, end, `\n${indent}${extra}`, start + 1 + indent.length + extra.length); }
+    if (/\{\s*$/.test(before) && /^\s*}/.test(after)) {
+      const insertion = `\n${indent}  \n${indent}`;
+      replaceRange(start, end, insertion, start + 1 + indent.length + 2);
+    } else {
+      const extra = /\{\s*$/.test(lineText) ? "  " : "";
+      replaceRange(start, end, `\n${indent}${extra}`, start + 1 + indent.length + extra.length);
+    }
   }
   function indentSelection() { const start = el.editor.selectionStart, end = el.editor.selectionEnd; const selected = el.editor.value.slice(start, end); if (selected.includes("\n")) { const replacement = selected.split("\n").map((line) => `  ${line}`).join("\n"); replaceRange(start, end, replacement, start + replacement.length); } else replaceRange(start, end, "  "); }
 
@@ -161,7 +182,8 @@ show greeter.greet("Joe")`;
   function hideContext() { el.context.hidden = true; }
 
   function download(name, text, type) { const blob = new Blob([text], { type: type || "text/plain;charset=utf-8" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = name; document.body.append(link); link.click(); setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 0); }
-  function exportWorkspace() { const payload = { format: "JoeLang Studio workspace", version: 1, languageVersion: core.version, savedAt: new Date().toISOString(), activeId, openIds, files: files.map(({ modified, ...item }) => item) }; download("joelang-workspace.joeworkspace.json", JSON.stringify(payload, null, 2), "application/json"); }
+  function saveActiveFile() { const file = activeFile(); if (!file) return; file.modified = false; persistWorkspace(); renderTabs(); el.runtimeStatus.textContent = `Saved ${file.name}`; }
+  function exportWorkspace() { const payload = { format: "JoeLang Studio workspace", version: 1, languageVersion: core.version, savedAt: new Date().toISOString(), activeId, openIds, files: files.map(({ modified, ...item }) => item) }; download("joelang-workspace.joeworkspace.json", JSON.stringify(payload, null, 2), "application/json"); files.forEach((item) => { if (item.type === "file") item.modified = false; }); persistWorkspace(); renderTabs(); el.runtimeStatus.textContent = "Workspace exported"; }
   async function importWorkspace(file) { try { const parsed = JSON.parse(await file.text()); if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.files)) throw new Error("This is not a JoeLang Studio 1.0 workspace."); const valid = parsed.files.filter((item) => item && FILE_TYPES.has(item.type) && typeof item.id === "string" && typeof item.name === "string").map((item) => ({ ...item, content: typeof item.content === "string" ? item.content : "", modified: false, expanded: item.expanded !== false })); if (!valid.some((item) => item.type === "file")) throw new Error("The workspace has no source files."); const knownIds = new Set(valid.map((item) => item.id)); valid.forEach((item) => { if (item.parent && !knownIds.has(item.parent)) item.parent = null; }); files = valid; activeId = valid.some((item) => item.id === parsed.activeId && item.type === "file") ? parsed.activeId : valid.find((item) => item.type === "file").id; openIds = (parsed.openIds || []).filter((item) => valid.some((fileItem) => item === fileItem.id && fileItem.type === "file")); if (!openIds.length) openIds = [activeId]; selectFile(activeId); } catch (error) { alert(`Could not open workspace: ${error.message}`); } }
   async function importSource(filesToImport) { for (const file of filesToImport) { const raw = await file.text(); let name = normalizeName(file.name || "imported.joe", "file"); let suffix = 2; const base = name.replace(/\.joe$/i, ""); while (siblingTaken(name, null)) name = `${base}_${suffix++}.joe`; files.push({ id: id("file"), type: "file", name, parent: null, content: raw, modified: false }); } const newest = files[files.length - 1]; renderTree(); if (newest && newest.type === "file") selectFile(newest.id); }
   function clearRuntime() { el.output.textContent = "Run a JoeLang file to see output."; el.objects.textContent = "No Joebjects created."; el.runtimeStatus.textContent = "Ready"; }
@@ -183,7 +205,7 @@ show greeter.greet("Joe")`;
   el.editor.addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); hideCompletions(); runActive(); return; }
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f") { event.preventDefault(); formatActive(); return; }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); exportWorkspace(); return; }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); saveActiveFile(); return; }
     if (!el.completion.hidden && event.key === "ArrowDown") { event.preventDefault(); completionIndex = (completionIndex + 1) % completionItems.length; updateCompletions(); return; }
     if (!el.completion.hidden && event.key === "ArrowUp") { event.preventDefault(); completionIndex = (completionIndex + completionItems.length - 1) % completionItems.length; updateCompletions(); return; }
     if (!el.completion.hidden && event.key === "Tab") { event.preventDefault(); complete(completionItems[completionIndex]); return; }
@@ -202,11 +224,12 @@ show greeter.greet("Joe")`;
   $("#theme-button").addEventListener("click", () => setTheme(el.studio.dataset.theme === "dark" ? "light" : "dark")); $("#right-sidebar-button").addEventListener("click", () => { el.inspector.classList.toggle("is-hidden"); el.workbench.classList.toggle("inspector-hidden"); });
   $("#hide-problems-button").addEventListener("click", () => { el.problemsPanel.classList.add("is-hidden"); });
   $("#open-workspace-button").addEventListener("click", () => el.workspaceInput.click()); $("#save-workspace-button").addEventListener("click", exportWorkspace); $("#import-file-button").addEventListener("click", () => el.sourceInput.click()); $("#download-file-button").addEventListener("click", () => { const file = activeFile(); if (file) download(file.name, file.content); });
+  el.accountButton.addEventListener("click", toggleAccountMenu); el.accountSettings.addEventListener("click", openProfileSettings); el.profileForm.addEventListener("submit", (event) => { event.preventDefault(); saveProfile(); });
   el.workspaceInput.addEventListener("change", () => { const file = el.workspaceInput.files[0]; if (file) importWorkspace(file); el.workspaceInput.value = ""; }); el.sourceInput.addEventListener("change", () => { if (el.sourceInput.files.length) importSource(el.sourceInput.files); el.sourceInput.value = ""; });
   el.itemKind.addEventListener("change", updateItemDialog); el.itemForm.addEventListener("submit", (event) => { event.preventDefault(); createItem(); }); el.renameForm.addEventListener("submit", (event) => { event.preventDefault(); renameItem(); }); el.deleteForm.addEventListener("submit", (event) => { event.preventDefault(); if (el.skipDelete.checked) localStorage.setItem("joelang-studio-1.0-skip-delete", "true"); if (pendingDelete) deleteItem(pendingDelete); el.deleteDialog.close(); });
   el.inputForm.addEventListener("submit", (event) => { event.preventDefault(); if (inputResolve) { const resolve = inputResolve; inputResolve = null; el.inputDialog.close(); resolve(el.inputValue.value); } }); $("#cancel-input-button").addEventListener("click", () => { if (inputResolve) { const resolve = inputResolve; inputResolve = null; el.inputDialog.close(); resolve(null); } });
-  document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => $("#" + button.dataset.close).close())); document.addEventListener("click", (event) => { if (!el.context.hidden && !el.context.contains(event.target)) hideContext(); });
+  document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => $("#" + button.dataset.close).close())); document.addEventListener("click", (event) => { if (!el.context.hidden && !el.context.contains(event.target)) hideContext(); if (!el.accountDropdown.hidden && !el.accountMenu.contains(event.target)) hideAccountMenu(); });
   document.querySelectorAll(".activity").forEach((button) => button.addEventListener("click", () => { document.querySelectorAll(".activity").forEach((item) => item.classList.toggle("active", item === button)); if (button.dataset.view === "docs") $("#docs-dialog").showModal(); }));
 
-  restoreWorkspace(); setTheme((() => { try { return localStorage.getItem(THEME) || "dark"; } catch { return "dark"; } })()); selectFile(activeId);
+  restoreWorkspace(); setTheme((() => { try { return localStorage.getItem(THEME) || "dark"; } catch { return "dark"; } })()); renderAccount(); selectFile(activeId); loadSession();
 })();

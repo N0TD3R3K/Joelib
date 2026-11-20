@@ -1,0 +1,22 @@
+{
+  "purpose": "Template for the JoeLang Studio Cloudflare Access policy. Configure this through Cloudflare Zero Trust; do not expose credentials or IDs in Git.",
+  "application": {
+    "name": "JoeLang Studio",
+    "type": "self_hosted",
+    "domain": "joelang-studio.derekli.dev",
+    "session_duration": "24h"
+  },
+  "policy": {
+    "name": "Joe team school-email access",
+    "decision": "allow",
+    "include": [
+      { "email_domain": { "domain": "hamdenhall.org" } },
+      { "email_domain": { "domain": "holycrosshs-ct.com" } },
+      { "email_domain": { "domain": "united-taylors.org" } },
+      { "email_domain": { "domain": "sstx.org" } }
+    ],
+    "require": [
+      { "login_method": { "id": "<ONE_TIME_PIN_IDENTITY_PROVIDER_ID>" } }
+    ]
+  }
+}

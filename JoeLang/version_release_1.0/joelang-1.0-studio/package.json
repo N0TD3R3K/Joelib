@@ -1,0 +1,15 @@
+{
+  "name": "joelang-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "JoeLang Studio with a Cloudflare Workers release target.",
+  "type": "module",
+  "scripts": {
+    "check": "node --check cloudflare/src/worker.mjs && node --check dist/app.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.158.0"
+  }
+}
