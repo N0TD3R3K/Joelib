@@ -31,14 +31,14 @@ const PROMPT_SUGGESTIONS = [
 export function EmptyState({ onSelectPrompt }: EmptyStateProps) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4 max-w-2xl mx-auto text-center select-none">
-      <div className="w-16 h-16 rounded-full bg-[#10a37f] flex items-center justify-center mb-6 shadow-xl shadow-[#10a37f]/20 ring-4 ring-white/5 animate-in zoom-in-90 duration-300">
+      <div className="w-16 h-16 rounded-full bg-[#10a37f] flex items-center justify-center mb-6 shadow-xl shadow-[#10a37f]/20 ring-4 ring-black/5 dark:ring-white/5 animate-in zoom-in-90 duration-300">
         <Sparkles className="w-8 h-8 text-white" />
       </div>
 
-      <h1 className="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-2">
+      <h1 className="text-2xl md:text-3xl font-semibold text-[#0d0d0d] dark:text-white tracking-tight mb-2">
         What can I help with in the Joe Universe?
       </h1>
-      <p className="text-sm text-gray-400 mb-8 max-w-md">
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-8 max-w-md">
         Speak fluent Joeglish, solve mathematics with LaTeX, write code, or explore the sacred texts of Joe Jin.
       </p>
 
@@ -50,16 +50,16 @@ export function EmptyState({ onSelectPrompt }: EmptyStateProps) {
             <button
               key={index}
               onClick={() => onSelectPrompt(item.prompt)}
-              className="p-3.5 rounded-2xl bg-[#2f2f2f]/60 hover:bg-[#2f2f2f] border border-white/5 hover:border-white/10 transition-all flex items-start gap-3 group"
+              className="p-3.5 rounded-2xl bg-[#f4f4f4] hover:bg-[#eaeaea] dark:bg-[#2f2f2f]/60 dark:hover:bg-[#2f2f2f] border border-black/5 dark:border-white/5 hover:border-black/15 dark:hover:border-white/10 transition-all flex items-start gap-3 group"
             >
-              <div className="p-2 rounded-xl bg-white/5 text-gray-300 group-hover:text-[#10a37f] transition-colors mt-0.5">
+              <div className="p-2 rounded-xl bg-black/5 dark:bg-white/5 text-gray-600 dark:text-gray-300 group-hover:text-[#10a37f] transition-colors mt-0.5">
                 <Icon className="w-4 h-4" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold text-gray-200 group-hover:text-white mb-0.5">
+                <div className="text-xs font-semibold text-gray-800 dark:text-gray-200 group-hover:text-black dark:group-hover:text-white mb-0.5">
                   {item.title}
                 </div>
-                <p className="text-[11px] text-gray-400 line-clamp-2 leading-relaxed">
+                <p className="text-[11px] text-gray-600 dark:text-gray-400 line-clamp-2 leading-relaxed">
                   {item.prompt}
                 </p>
               </div>

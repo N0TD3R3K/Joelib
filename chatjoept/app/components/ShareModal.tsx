@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from "react";
-import { X, Share2, Copy, Check, Sparkles, Globe, Loader2 } from "lucide-react";
-import type { ChatSession } from "~/types/chat";
+import { X, Share2, Copy, Check, Loader2, SlidersHorizontal } from "lucide-react";
+import type { ChatSession, UserQuotas } from "~/types/chat";
 
 interface ShareModalProps {
   isOpen: boolean;
   onClose: () => void;
   dialog: ChatSession | null;
-  onShareCreated?: (shareId: string) => void;
+  onQuotasUpdated?: (quotas: UserQuotas) => void;
+  onOpenManageShares?: () => void;
 }
 
 export function ShareModal({
   isOpen,
   onClose,
   dialog,
-  onShareCreated,
+  onQuotasUpdated,
+  onOpenManageShares,
 }: ShareModalProps) {
   const [shareUrl, setShareUrl] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
@@ -24,6 +26,7 @@ export function ShareModal({
     if (!isOpen || !dialog) {
       setShareUrl("");
       setCopied(false);
+      setError(null);
       return;
     }
 
@@ -45,20 +48,20 @@ export function ShareModal({
       .then((res) => res.json())
       .then((data: any) => {
         setIsLoading(false);
+        if (data.quotas && onQuotasUpdated) {
+          onQuotasUpdated(data.quotas);
+        }
         if (data.success && data.shareUrl) {
           setShareUrl(data.shareUrl);
-          if (data.shareId && onShareCreated) {
-            onShareCreated(data.shareId);
-          }
         } else {
-          setError(data.error || "Failed to create share link");
+          setError(data.error || "Failed to create share snapshot");
         }
       })
-      .catch((err) => {
+      .catch(() => {
         setIsLoading(false);
-        setError("Network error while generating share link");
+        setError("Network error while generating share snapshot");
       });
-  }, [isOpen, dialog?.id, dialog?.messages?.length]);
+  }, [isOpen, dialog?.id]);
 
   if (!isOpen) return null;
 
@@ -74,17 +77,17 @@ export function ShareModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-[#212121] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 bg-black/50 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-[#212121] border border-black/10 dark:border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-black/10 dark:border-white/10">
           <div className="flex items-center gap-2">
             <Share2 className="w-4 h-4 text-[#10a37f]" />
-            <h2 className="text-base font-semibold text-white">Share link to Chat</h2>
+            <h2 className="text-base font-semibold text-[#0d0d0d] dark:text-white">Create Share Snapshot</h2>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
+            className="text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -92,16 +95,16 @@ export function ShareModal({
 
         {/* Content */}
         <div className="p-6 space-y-4">
-          <p className="text-xs text-gray-400 leading-relaxed">
-            Anyone with this link will be able to view all rounds of this conversation without logging in.
+          <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">
+            Anyone with this link can view a frozen snapshot of this conversation without signing in. Snapshots count toward your memory capacity and can be deleted anytime.
           </p>
 
           {dialog && (
-            <div className="p-3.5 rounded-xl bg-[#1c1c1c] border border-white/5">
-              <div className="text-xs font-semibold text-white truncate">
+            <div className="p-3.5 rounded-xl bg-[#f7f7f8] dark:bg-[#1c1c1c] border border-black/5 dark:border-white/5">
+              <div className="text-xs font-semibold text-[#0d0d0d] dark:text-white truncate">
                 {dialog.title || "Untitled chat"}
               </div>
-              <div className="text-[11px] text-gray-400 mt-1 flex items-center gap-2">
+              <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2">
                 <span>
                   {dialog.messages.length} message{dialog.messages.length !== 1 ? "s" : ""} (
                   {Math.ceil(dialog.messages.length / 2)} round
@@ -114,34 +117,34 @@ export function ShareModal({
           )}
 
           {isLoading ? (
-            <div className="py-6 flex flex-col items-center justify-center gap-2 text-gray-400">
+            <div className="py-6 flex flex-col items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
               <Loader2 className="w-6 h-6 animate-spin text-[#10a37f]" />
-              <span className="text-xs">Generating public link...</span>
+              <span className="text-xs">Saving snapshot...</span>
             </div>
           ) : error ? (
-            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs">
               {error}
             </div>
           ) : (
             <div className="space-y-2">
-              <label className="block text-xs font-medium text-gray-300">
-                Public Share URL
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                Public Snapshot URL
               </label>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
                   readOnly
                   value={shareUrl}
-                  className="flex-1 bg-[#161616] border border-white/10 rounded-xl px-3 py-2 text-xs text-gray-200 font-mono focus:outline-none select-all"
+                  className="flex-1 bg-[#f4f4f4] dark:bg-[#161616] border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-gray-800 dark:text-gray-200 font-mono focus:outline-none select-all"
                 />
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white text-black font-semibold text-xs hover:bg-gray-200 transition-colors shrink-0 shadow-sm"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-black dark:bg-white text-white dark:text-black font-semibold text-xs hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors shrink-0 shadow-sm"
                 >
                   {copied ? (
                     <>
-                      <Check className="w-3.5 h-3.5 text-green-700" />
+                      <Check className="w-3.5 h-3.5 text-green-400 dark:text-green-700" />
                       <span>Copied!</span>
                     </>
                   ) : (
@@ -157,11 +160,27 @@ export function ShareModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-white/10 flex justify-end bg-[#1a1a1a]">
+        <div className="px-6 py-3 border-t border-black/10 dark:border-white/10 flex items-center justify-between bg-[#f9f9f9] dark:bg-[#1a1a1a]">
+          {onOpenManageShares ? (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenManageShares();
+              }}
+              className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white transition-colors"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Manage shared links</span>
+            </button>
+          ) : (
+            <span />
+          )}
+
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-medium bg-[#2f2f2f] hover:bg-white/10 text-white rounded-xl transition-colors"
+            className="px-4 py-2 text-xs font-medium bg-black/5 hover:bg-black/10 dark:bg-[#2f2f2f] dark:hover:bg-white/10 text-[#0d0d0d] dark:text-white rounded-xl transition-colors"
           >
             Close
           </button>

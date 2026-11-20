@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
 import { PanelLeft, SquarePen, Share2 } from "lucide-react";
-import type { ChatSession, Message, UserSettings, Attachment } from "~/types/chat";
-import {
-  parseSessionCookie,
-  verifySessionToken,
-  getEnv,
-} from "~/utils/auth.server";
+import type {
+  ChatSession,
+  Message,
+  Attachment,
+  AuthUser,
+  UserQuotas,
+} from "~/types/chat";
+import { getAuthenticatedUser, getEnv } from "~/utils/auth.server";
 import {
   getLocalSessions,
   saveLocalSessions,
@@ -15,7 +17,6 @@ import {
   setActiveSessionId,
   getLocalSettings,
   saveLocalSettings,
-  DEFAULT_SETTINGS,
 } from "~/utils/storage";
 import { AuthGate } from "~/components/AuthGate";
 import { Sidebar } from "~/components/Sidebar";
@@ -23,20 +24,29 @@ import { ModelSelector } from "~/components/ModelSelector";
 import { ChatMessage } from "~/components/ChatMessage";
 import { ChatInput } from "~/components/ChatInput";
 import { EmptyState } from "~/components/EmptyState";
-import { SettingsModal } from "~/components/SettingsModal";
+import { SettingsModal, type SettingsTab } from "~/components/SettingsModal";
 import { ShareModal } from "~/components/ShareModal";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const env = getEnv();
-  const secret = env.SESSION_SECRET || "chatjoept-default-secret-salt-2026";
+  const session = await getAuthenticatedUser(request, env);
+  const url = new URL(request.url);
+  const authError = url.searchParams.get("auth_error");
 
-  const cookieHeader = request.headers.get("Cookie");
-  const sessionToken = parseSessionCookie(cookieHeader);
-  const session = await verifySessionToken(sessionToken, secret);
+  const user: AuthUser | null = session
+    ? {
+        sub: session.sub,
+        email: session.email,
+        name: session.name,
+        picture: session.picture,
+        isAuthenticated: true,
+      }
+    : null;
 
   return {
-    isAuthenticated: !!session,
-    userEmail: session?.email || null,
+    isAuthenticated: !!user,
+    user,
+    authError,
   };
 }
 
@@ -45,7 +55,7 @@ export default function Home() {
 
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState(loaderData.isAuthenticated);
-  const [userEmail, setUserEmail] = useState<string>(loaderData.userEmail || "");
+  const [user, setUser] = useState<AuthUser | null>(loaderData.user);
 
   // App & Chat State
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -54,32 +64,59 @@ export default function Home() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState("jpt-6.1-sol");
-  const [quotas, setQuotas] = useState<{
-    usagePercent: number;
-    dialogsPercent: number;
-    storagePercent: number;
-  }>({ usagePercent: 0, dialogsPercent: 0, storagePercent: 0 });
+  const [theme, setTheme] = useState<"dark" | "light" | "system">("system");
+  const [temperature, setTemperature] = useState<number>(1.0);
+  const [quotas, setQuotas] = useState<UserQuotas>({
+    usage5hPercent: 0,
+    usage7dPercent: 0,
+    uploadedFilesBytes: 0,
+    uploadedFilesPercent: 0,
+    chatPercent: 0,
+    sharePercent: 0,
+    freePercent: 100,
+    isSoftLimited: false,
+    isHardLimited: false,
+  });
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Sync a single dialog to the server (KV storage & quotas)
-  const syncDialogToServer = async (dialog: ChatSession) => {
-    if (!isAuthenticated) return;
+  // Sync a single dialog to the server (D1 storage & credit quotas)
+  const syncDialogToServer = async (
+    dialog: ChatSession,
+    isCompletion = false
+  ): Promise<ChatSession | null> => {
+    if (!isAuthenticated) return null;
     try {
       const res = await fetch("/api/dialogs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dialog }),
+        body: JSON.stringify({ dialog, isCompletion }),
       });
       const data: any = await res.json();
       if (data.quotas) {
         setQuotas(data.quotas);
       }
+      if (!res.ok) {
+        return null;
+      }
+      if (data.truncated && data.dialog) {
+        setSessions((currentSessions) => {
+          const updated = currentSessions.map((s) =>
+            s.id === data.dialog.id ? data.dialog : s
+          );
+          saveLocalSessions(updated);
+          return updated;
+        });
+        return data.dialog;
+      }
+      return data.dialog || dialog;
     } catch (err) {
       console.error("Failed to sync dialog to server:", err);
+      return null;
     }
   };
 
@@ -90,14 +127,15 @@ export default function Home() {
       if (!res.ok) return;
       const data: any = await res.json();
       if (data.dialogs && Array.isArray(data.dialogs)) {
-        if (data.dialogs.length > 0) {
-          setSessions(data.dialogs);
-          saveLocalSessions(data.dialogs);
-          const activeId = getActiveSessionId();
-          if (!activeId || !data.dialogs.some((d: any) => d.id === activeId)) {
-            setActiveSessionIdState(data.dialogs[0].id);
-            setActiveSessionId(data.dialogs[0].id);
-          }
+        setSessions(data.dialogs);
+        saveLocalSessions(data.dialogs);
+        const activeId = getActiveSessionId();
+        if (data.dialogs.length === 0) {
+          setActiveSessionIdState(null);
+          setActiveSessionId(null);
+        } else if (!activeId || !data.dialogs.some((d: any) => d.id === activeId)) {
+          setActiveSessionIdState(data.dialogs[0].id);
+          setActiveSessionId(data.dialogs[0].id);
         }
       }
       if (data.quotas) {
@@ -113,6 +151,15 @@ export default function Home() {
     const loadedSettings = getLocalSettings();
     if (loadedSettings.model) {
       setSelectedModel(loadedSettings.model);
+    }
+    if (loadedSettings.theme) {
+      setTheme(loadedSettings.theme);
+    }
+    if (
+      typeof loadedSettings.temperature === "number" &&
+      Number.isFinite(loadedSettings.temperature)
+    ) {
+      setTemperature(loadedSettings.temperature);
     }
 
     const loadedSessions = getLocalSessions();
@@ -131,6 +178,24 @@ export default function Home() {
     }
   }, [isAuthenticated]);
 
+  // Apply theme class to document root and listen to OS changes in Auto mode
+  useEffect(() => {
+    const root = document.documentElement;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+
+    const applyTheme = () => {
+      const useDark = theme === "dark" || (theme === "system" && media.matches);
+      root.classList.toggle("dark", useDark);
+    };
+
+    applyTheme();
+
+    if (theme === "system") {
+      media.addEventListener("change", applyTheme);
+      return () => media.removeEventListener("change", applyTheme);
+    }
+  }, [theme]);
+
   // Sync sessions changes to localStorage
   const updateSessions = (newSessions: ChatSession[]) => {
     setSessions(newSessions);
@@ -146,6 +211,11 @@ export default function Home() {
 
   // Create New Chat
   const handleNewChat = () => {
+    if (quotas.isSoftLimited) {
+      setSettingsTab("account");
+      setSettingsOpen(true);
+      return;
+    }
     if (isStreaming) {
       handleStopStreaming();
     }
@@ -231,19 +301,23 @@ export default function Home() {
   const handleSendMessage = async (
     textToSend?: string,
     attachmentsToSend?: Attachment[],
-    webSearchToSend?: boolean
+    webSearchToSend?: boolean,
+    overrideSession?: ChatSession
   ) => {
     const content = (textToSend !== undefined ? textToSend : input).trim();
     const attachments = attachmentsToSend || [];
     const webSearch = webSearchToSend || false;
 
-    if ((!content && attachments.length === 0) || isStreaming) return;
+    if ((!content && attachments.length === 0) || isStreaming || quotas.isSoftLimited) {
+      return;
+    }
 
     setInput("");
 
     // Ensure there is an active session
-    let sessionId = activeSessionId;
-    let targetSession = sessions.find((s) => s.id === sessionId);
+    let targetSession =
+      overrideSession || sessions.find((s) => s.id === activeSessionId);
+    let sessionId = targetSession?.id || activeSessionId;
 
     if (!targetSession) {
       const newSession: ChatSession = {
@@ -258,7 +332,6 @@ export default function Home() {
       sessionId = newSession.id;
       setActiveSessionIdState(sessionId);
       setActiveSessionId(sessionId);
-      setSessions((prev) => [newSession, ...prev]);
     }
 
     const userMessage: Message = {
@@ -278,7 +351,8 @@ export default function Home() {
       webSearch,
     };
 
-    const updatedMessages = [...targetSession.messages, userMessage, assistantMessage];
+    const baseMessages = [...targetSession.messages, userMessage];
+    const updatedMessages = [...baseMessages, assistantMessage];
 
     // Auto-title session from first user message
     const updatedTitle =
@@ -303,28 +377,81 @@ export default function Home() {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
+    let streamedText = "";
+    let hasStartedReasoning = false;
+    let hasClosedReasoning = false;
+    const toolsUsed: string[] = [];
+
+    const buildFinishedSession = (finalContent: string): ChatSession => ({
+      ...nextSession,
+      messages: [
+        ...baseMessages,
+        {
+          ...assistantMessage,
+          content: finalContent,
+          toolsUsed: toolsUsed.length > 0 ? [...toolsUsed] : undefined,
+        },
+      ],
+      updatedAt: Date.now(),
+    });
+
     try {
-      const formattedChatMessages = [...targetSession.messages, userMessage].map((m) => {
-        let fullText = m.content;
-        if (m.attachments && m.attachments.length > 0) {
-          const filesSummary = m.attachments
-            .map((att) => `[File Attachment: ${att.name}]\n\`\`\`\n${att.content}\n\`\`\``)
-            .join("\n\n");
-          fullText = fullText ? `${fullText}\n\n${filesSummary}` : filesSummary;
+      const existingDialogBytes = new TextEncoder().encode(
+        JSON.stringify(baseMessages)
+      ).length;
+
+      const formattedChatMessages = baseMessages.map((m) => {
+        if (!m.attachments || m.attachments.length === 0) {
+          return { role: m.role, content: m.content };
         }
-        return {
-          role: m.role,
-          content: fullText,
-        };
+
+        const multimodalParts: Array<Record<string, any>> = [];
+        const inlineTextAttachments: string[] = [];
+
+        for (const att of m.attachments) {
+          const kind =
+            att.kind || (att.type.startsWith("image/") ? "image" : "text");
+          if (att.fileId && (kind === "file" || kind === "image")) {
+            multimodalParts.push({
+              type: "file",
+              file_id: att.fileId,
+            });
+          } else if (kind === "image" && att.content.startsWith("data:image/")) {
+            multimodalParts.push({
+              type: "image_url",
+              image_url: { url: att.content },
+            });
+          } else if (att.content) {
+            inlineTextAttachments.push(
+              `[File Attachment: ${att.name}]\n\`\`\`\n${att.content}\n\`\`\``
+            );
+          }
+        }
+
+        const combinedText = [m.content, ...inlineTextAttachments]
+          .filter(Boolean)
+          .join("\n\n");
+
+        if (m.role === "user" && multimodalParts.length > 0) {
+          if (combinedText) {
+            multimodalParts.push({ type: "text", text: combinedText });
+          }
+          return { role: m.role, content: multimodalParts };
+        }
+
+        return { role: m.role, content: combinedText };
       });
 
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          dialogId: sessionId,
+          existingDialogBytes,
           messages: formattedChatMessages,
           webSearch,
           model: selectedModel,
+          temperature,
         }),
         signal: abortController.signal,
       });
@@ -339,10 +466,7 @@ export default function Home() {
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let streamedText = "";
       let buffer = "";
-      let hasStartedReasoning = false;
-      let hasClosedReasoning = false;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -363,6 +487,29 @@ export default function Home() {
 
           try {
             const parsed = JSON.parse(dataStr);
+
+            if (Array.isArray(parsed.chatjoept_tools)) {
+              for (const toolName of parsed.chatjoept_tools) {
+                if (typeof toolName === "string" && !toolsUsed.includes(toolName)) {
+                  toolsUsed.push(toolName);
+                }
+              }
+              setSessions((currentSessions) =>
+                currentSessions.map((s) => {
+                  if (s.id !== sessionId) return s;
+                  const msgs = [...s.messages];
+                  const lastIdx = msgs.length - 1;
+                  if (lastIdx >= 0 && msgs[lastIdx].role === "assistant") {
+                    msgs[lastIdx] = {
+                      ...msgs[lastIdx],
+                      toolsUsed: toolsUsed.length > 0 ? [...toolsUsed] : undefined,
+                    };
+                  }
+                  return { ...s, messages: msgs, updatedAt: Date.now() };
+                })
+              );
+            }
+
             const delta = parsed.choices?.[0]?.delta?.content || "";
             const reasoning = parsed.choices?.[0]?.delta?.reasoning_content || "";
 
@@ -390,7 +537,11 @@ export default function Home() {
                   const msgs = [...s.messages];
                   const lastIdx = msgs.length - 1;
                   if (lastIdx >= 0 && msgs[lastIdx].role === "assistant") {
-                    msgs[lastIdx] = { ...msgs[lastIdx], content: streamedText };
+                    msgs[lastIdx] = {
+                      ...msgs[lastIdx],
+                      content: streamedText,
+                      toolsUsed: toolsUsed.length > 0 ? [...toolsUsed] : undefined,
+                    };
                   }
                   return { ...s, messages: msgs, updatedAt: Date.now() };
                 })
@@ -406,56 +557,47 @@ export default function Home() {
         streamedText += "</think>\n\n";
       }
 
-      // Final save to localStorage with complete streamed text and sync to KV server
-      let finalDialogToSync: ChatSession | null = null;
+      // Final save to localStorage with complete streamed text and sync to D1 server
+      const finishedDialog = buildFinishedSession(streamedText);
       setSessions((currentSessions) => {
-        const updated = currentSessions.map((s) => {
-          if (s.id !== sessionId) return s;
-          const msgs = [...s.messages];
-          const lastIdx = msgs.length - 1;
-          if (lastIdx >= 0 && msgs[lastIdx].role === "assistant") {
-            msgs[lastIdx] = { ...msgs[lastIdx], content: streamedText };
-          }
-          const finished = { ...s, messages: msgs, updatedAt: Date.now() };
-          finalDialogToSync = finished;
-          return finished;
-        });
+        const updated = currentSessions.map((s) =>
+          s.id === sessionId ? finishedDialog : s
+        );
         saveLocalSessions(updated);
         return updated;
       });
 
-      if (finalDialogToSync) {
-        syncDialogToServer(finalDialogToSync);
-      }
+      await syncDialogToServer(finishedDialog, true);
     } catch (err: any) {
-      if (err.name !== "AbortError") {
-        console.error("Chat streaming error:", err);
-        let errorDialogToSync: ChatSession | null = null;
+      if (err.name === "AbortError") {
+        // Persist any partial output generated before user stopped
+        if (hasStartedReasoning && !hasClosedReasoning) {
+          streamedText += "</think>\n\n";
+        }
+        const abortedDialog = buildFinishedSession(streamedText);
         setSessions((currentSessions) => {
-          const updated = currentSessions.map((s) => {
-            if (s.id !== sessionId) return s;
-            const msgs = [...s.messages];
-            const lastIdx = msgs.length - 1;
-            if (lastIdx >= 0 && msgs[lastIdx].role === "assistant") {
-              const currentContent = msgs[lastIdx].content;
-              msgs[lastIdx] = {
-                ...msgs[lastIdx],
-                content:
-                  currentContent +
-                  `\n\n*[ChatJoePT Error]: ${err.message || "Failed to communicate with service"}*`,
-              };
-            }
-            const errorSession = { ...s, messages: msgs };
-            errorDialogToSync = errorSession;
-            return errorSession;
-          });
+          const updated = currentSessions.map((s) =>
+            s.id === sessionId ? abortedDialog : s
+          );
+          saveLocalSessions(updated);
+          return updated;
+        });
+        await syncDialogToServer(abortedDialog, true);
+      } else {
+        console.error("Chat streaming error:", err);
+        const errorContent =
+          streamedText +
+          `\n\n*[ChatJoePT Error]: ${err.message || "Failed to communicate with service"}*`;
+        const errorDialog = buildFinishedSession(errorContent);
+        setSessions((currentSessions) => {
+          const updated = currentSessions.map((s) =>
+            s.id === sessionId ? errorDialog : s
+          );
           saveLocalSessions(updated);
           return updated;
         });
 
-        if (errorDialogToSync) {
-          syncDialogToServer(errorDialogToSync);
-        }
+        await syncDialogToServer(errorDialog, false);
       }
     } finally {
       setIsStreaming(false);
@@ -491,10 +633,10 @@ export default function Home() {
     const nextSessions = sessions.map((s) => (s.id === currentSession.id ? nextSession : s));
     updateSessions(nextSessions);
 
-    handleSendMessage(lastUserPrompt, lastAttachments, lastWebSearch);
+    handleSendMessage(lastUserPrompt, lastAttachments, lastWebSearch, nextSession);
   };
 
-  // Handle Logout
+  // Handle Logout (clears only ChatJoePT session cookie)
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
@@ -502,24 +644,67 @@ export default function Home() {
       // Ignore network errors on logout
     }
     setIsAuthenticated(false);
-    setUserEmail("");
+    setUser(null);
+    updateSessions([]);
+    setActiveSessionIdState(null);
+    setActiveSessionId(null);
+    setQuotas({
+      usage5hPercent: 0,
+      usage7dPercent: 0,
+      uploadedFilesBytes: 0,
+      uploadedFilesPercent: 0,
+      chatPercent: 0,
+      sharePercent: 0,
+      freePercent: 100,
+      isSoftLimited: false,
+      isHardLimited: false,
+    });
   };
 
-  // If unauthenticated, display the ChatGPT registration & login gate
-  if (!isAuthenticated) {
-    return (
-      <AuthGate
-        onSuccess={(email) => {
-          setUserEmail(email);
-          setIsAuthenticated(true);
-          fetchServerDialogs();
-        }}
-      />
-    );
+  // Handle Delete Account (removes ChatJoePT data only; leaves JoeAuth intact)
+  const handleDeleteAccount = async () => {
+    const res = await fetch("/api/user", { method: "DELETE" });
+    if (!res.ok) {
+      const errData: any = await res.json().catch(() => ({}));
+      throw new Error(errData.error || "Failed to delete ChatJoePT account");
+    }
+    if (isStreaming) {
+      handleStopStreaming();
+    }
+    try {
+      localStorage.clear();
+    } catch {
+      // Ignore storage errors
+    }
+    setSettingsOpen(false);
+    setShareModalOpen(false);
+    setIsAuthenticated(false);
+    setUser(null);
+    setSessions([]);
+    setActiveSessionIdState(null);
+    setTheme("system");
+    setTemperature(1.0);
+    setSelectedModel("jpt-6.1-sol");
+    setQuotas({
+      usage5hPercent: 0,
+      usage7dPercent: 0,
+      uploadedFilesBytes: 0,
+      uploadedFilesPercent: 0,
+      chatPercent: 0,
+      sharePercent: 0,
+      freePercent: 100,
+      isSoftLimited: false,
+      isHardLimited: false,
+    });
+  };
+
+  // If unauthenticated, display the JoeAuth sign-in gate
+  if (!isAuthenticated || !user) {
+    return <AuthGate authError={loaderData.authError} />;
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#212121] text-[#ececec]">
+    <div className="flex h-screen w-screen overflow-hidden bg-white dark:bg-[#212121] text-gray-900 dark:text-[#ececec] transition-colors duration-200">
       {/* Sidebar */}
       <Sidebar
         isOpen={sidebarOpen}
@@ -529,21 +714,27 @@ export default function Home() {
         onSelectSession={handleSelectSession}
         onNewChat={handleNewChat}
         onDeleteSession={handleDeleteSession}
-        userEmail={userEmail}
-        onOpenSettings={() => setSettingsOpen(true)}
+        userEmail={user.email}
+        userName={user.name}
+        userPicture={user.picture}
+        isSoftLimited={quotas.isSoftLimited}
+        onOpenSettings={() => {
+          setSettingsTab("general");
+          setSettingsOpen(true);
+        }}
         onLogout={handleLogout}
       />
 
       {/* Main Chat View Area */}
       <main className="flex-1 flex flex-col h-full min-w-0 relative">
         {/* Top Navigation Bar */}
-        <header className="h-14 border-b border-white/5 flex items-center justify-between px-3 md:px-4 z-10 shrink-0 select-none bg-[#212121]/80 backdrop-blur-md">
+        <header className="h-14 border-b border-black/5 dark:border-white/5 flex items-center justify-between px-3 md:px-4 z-10 shrink-0 select-none bg-white/80 dark:bg-[#212121]/80 backdrop-blur-md">
           <div className="flex items-center gap-2">
             {!sidebarOpen && (
               <button
                 onClick={() => setSidebarOpen(true)}
                 type="button"
-                className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+                className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                 title="Open sidebar"
               >
                 <PanelLeft className="w-5 h-5" />
@@ -563,8 +754,9 @@ export default function Home() {
             <button
               onClick={handleNewChat}
               type="button"
-              className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors sm:hidden"
-              title="New chat"
+              disabled={quotas.isSoftLimited}
+              className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors sm:hidden"
+              title={quotas.isSoftLimited ? "Memory full" : "New chat"}
             >
               <SquarePen className="w-4 h-4" />
             </button>
@@ -572,9 +764,17 @@ export default function Home() {
             <button
               onClick={() => setShareModalOpen(true)}
               type="button"
-              disabled={!currentSession || currentSession.messages.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-white/5 border border-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Share conversation"
+              disabled={
+                !currentSession ||
+                currentSession.messages.length === 0 ||
+                quotas.isSoftLimited
+              }
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 border border-black/10 dark:border-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={
+                quotas.isSoftLimited
+                  ? "Memory full — manage shared links or delete chats in Settings"
+                  : "Share conversation snapshot"
+              }
             >
               <Share2 className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Share</span>
@@ -613,17 +813,34 @@ export default function Home() {
           }
           onStop={handleStopStreaming}
           isStreaming={isStreaming}
+          softLimitReached={quotas.isSoftLimited}
+          onQuotasUpdated={setQuotas}
         />
       </main>
 
       {/* Settings Modal */}
       <SettingsModal
         isOpen={settingsOpen}
+        initialTab={settingsTab}
         onClose={() => setSettingsOpen(false)}
-        userEmail={userEmail}
+        userEmail={user.email}
+        userName={user.name}
+        userPicture={user.picture}
         quotas={quotas}
+        onQuotasUpdated={setQuotas}
         onClearChats={handleClearAllChats}
         onLogout={handleLogout}
+        onDeleteAccount={handleDeleteAccount}
+        theme={theme}
+        onThemeChange={(nextTheme) => {
+          setTheme(nextTheme);
+          saveLocalSettings({ theme: nextTheme });
+        }}
+        temperature={temperature}
+        onTemperatureChange={(nextTemp) => {
+          setTemperature(nextTemp);
+          saveLocalSettings({ temperature: nextTemp });
+        }}
       />
 
       {/* Share Modal */}
@@ -631,16 +848,11 @@ export default function Home() {
         isOpen={shareModalOpen}
         onClose={() => setShareModalOpen(false)}
         dialog={currentSession}
-        onShareCreated={(shareId) => {
-          if (activeSessionId) {
-            setSessions((prev) => {
-              const updated = prev.map((s) =>
-                s.id === activeSessionId ? { ...s, shareId } : s
-              );
-              saveLocalSessions(updated);
-              return updated;
-            });
-          }
+        onQuotasUpdated={setQuotas}
+        onOpenManageShares={() => {
+          setShareModalOpen(false);
+          setSettingsTab("shares");
+          setSettingsOpen(true);
         }}
       />
     </div>

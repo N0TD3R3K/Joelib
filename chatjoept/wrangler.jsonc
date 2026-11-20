@@ -9,15 +9,16 @@
 	"compatibility_date": "2026-11-04",
 	"main": "./workers/app.ts",
 	"vars": {
-		"ALLOWED_EMAIL_DOMAINS": "united-taylors.org,sstx.org,hamdenhall.org",
-		"RESEND_FROM_EMAIL": "ChatJoePT <chatjoept-noreply@united-taylors.org>",
 		"LLM_API_URL": "https://api.deepseek.com",
-		"LLM_BASE_MODEL": "deepseek-chat"
+		"LLM_BASE_MODEL": "deepseek-chat",
+		"JOEAUTH_ISSUER": "https://auth.joe-univer.se"
 	},
-	"kv_namespaces": [
+	"d1_databases": [
 		{
-			"binding": "CHATJOEPT_KV",
-			"id": "d87c99907ebc4fc0b58e538e62fd6c1d"
+			"binding": "CHATJOEPT_DB",
+			"database_name": "chatjoept-db",
+			"database_id": "1ca84d39-9bb3-4c78-98c2-e7e506310955",
+			"migrations_dir": "migrations"
 		}
 	],
 	"observability": {

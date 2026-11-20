@@ -1,129 +1,126 @@
 # ChatJoePT 🤖
 
-> **The Official ChatGPT Replica of the Joe Universe (`Joelib`)**  
-> Deployed on Cloudflare Workers & Cloudflare KV with React Router v8, Tailwind CSS, and KaTeX.  
-> **Production URL**: [https://chatjoept.waynexu2020.workers.dev](https://chatjoept.waynexu2020.workers.dev)
+> **The Official ChatGPT-Style Assistant of the Joe Universe (`Joelib`)**  
+> Powered by Cloudflare Workers & Cloudflare D1 with React Router v8, Tailwind CSS, and KaTeX.  
+> **Domain**: [https://chat.joe-univer.se](https://chat.joe-univer.se)
 
 ---
 
 ## 🌟 Highlights & Features
 
 - **ChatGPT-Fidelity User Experience**:
-  - Dark-mode interface adhering to modern ChatGPT UI design patterns.
-  - Streaming Server-Sent Events (SSE) responses with token-by-token rendering.
-  - Thought-process collapsible disclosures (`<think>...</think>`) labeled in Joeglish.
-  - One-click copy for code blocks and assistant messages.
-  - Web search mode toggle and file attachment processing.
+  - Dark-mode interface with collapsible sidebar, search, model selector (`JPT-6.1 Sol`, `JPT-6.1 Terra`), and copy buttons.
+  - Streaming Server-Sent Events (SSE) responses with token-by-token rendering and collapsible reasoning disclosures (`<think>...</think>`).
+  - Mathematical formula rendering with KaTeX (`$...$`, `$$...$$`, `\(...\)`, `\[...\]`).
+  - Subtle, natural Joeglish persona with zero forced suffix mangling or intrusive trivia spam.
 
-- **Mathematical Formula Rendering (KaTeX)**:
-  - Supports inline math (`$...$` and `\(...\)`) and display math (`$$...$$` and `\[...\]`).
-  - Automatic pre-processing of brackets to ensure KaTeX parses mixed partial derivatives, fractions, matrices, and expressions accurately.
-  - Horizontal overflow scrolling for long formulas.
+- **On-Demand Knowledge & Live Web Tools**:
+  - **Joelib Reference Tools (`search_joelib`, `read_joelib_document`)**: Fetches exact repository files from `N0TD3R3K/Joelib` on demand (Joeriodic Table, Joekemons, JoeLang, J++, etc.) without polluting normal conversation prompts.
+  - **DeepSeek Search & Fetch APIs (`deepseek_search`, `deepseek_fetch`)**: Enabled when Web Search is toggled on, performing live search via DeepSeek `POST /v1/tools/search` and page reading via `POST /v1/tools/fetch`.
 
-- **Cross-Device Session Synchronization (Cloudflare KV)**:
-  - Dialogs are persisted under `user:<email>:dialog:<id>` and indexed at `user:<email>:index`.
-  - Conversations sync seamlessly across devices on login.
-  - Safe data management: single-chat deletion and complete account erasure with storage reclamation.
-  - Hard quotas enforced at the edge:
-    - **Max 200 stored dialogs** per account.
-    - **Max 16 MiB total storage** per account.
+- **Cloudflare D1 Relational Persistence & Storage Credit Accounting**:
+  - Relational SQLite schema (`users`, `dialogs`, `shared_links`, `usage_records`) stored in Cloudflare D1 (`CHATJOEPT_DB`).
+  - **16,384 Storage Credit Pool** (no 200-dialog cap):
+    - Each visible chat (`is_hidden = 0`): `256 + ceil(bytes / 1024)` credits.
+    - Each immutable shared snapshot (`is_hidden = 1`): `32 + ceil(bytes / 1024)` credits (rounded up individually).
+  - **Soft Limit (`16,000`)**: Blocks new chats, sending new prompts, and creating new shared links; in-flight streaming completions may still save up to the hard limit.
+  - **Hard Limit (`16,384`)**: Stops excessive live output and truncates saved content cleanly so stored credits never exceed `16,384`.
+  - **Memory Usage Stacked Bar**: Settings displays only clean percentages (`% Used by Chats`, `% Used by Shared Links`, `% Available`) alongside 24h Usage Quota `%`.
 
-- **Rolling 24-Hour Usage Limit**:
-  - Sliding 24-hour rate limiting stored in KV under `usage:<email>`.
-  - Calculates real token cost based on upstream token consumption (cache hits, cache misses, output tokens).
-  - Enforces a 2.00 CNY cap per rolling 24-hour window per account.
+- **Immutable Public Shared Snapshots (`/share/:shareId`)**:
+  - Sharing creates a frozen hidden snapshot row in `dialogs` (`is_hidden = 1`) referenced by `shared_links`.
+  - Subsequent edits or deletions on the source conversation do **not** alter existing shared links.
+  - Includes a **Shared Links** management tab inside Settings to open, copy, inspect percentage footprint, or delete shared snapshots individually or all at once to reclaim storage.
 
-- **Quota Percentages in Settings**:
-  - In accordance with privacy and security requirements, raw financial figures, dialog limits, and byte counts are never exposed to the client.
-  - The Settings modal renders visual capacity progress meters displayed exclusively as percentages:
-    - **24h Usage Quota (%)**
-    - **Dialog Capacity (%)**
-    - **Storage Used (%)**
-
-- **Public Dialog Sharing (`/share/:shareId`)**:
-  - Instant public sharing links accessible without authentication.
-  - Responsive multi-round thread view with sticky header and full vertical scrolling.
-  - Automatic synchronization: subsequent conversation rounds automatically sync to existing share IDs.
-
-- **Secure OTP Authentication & Provider Masking**:
-  - Passwordless Email OTP login restricted to authorized domains (`united-taylors.org`, `sstx.org`, `hamdenhall.org`) delivered via Resend.
-  - Signed HMAC session tokens with 30-day persistence.
-  - Strict provider concealment: upstream model identities and endpoints are completely abstracted behind the ChatJoePT persona and JPT models (`JPT-6.1 Sol`, `JPT-6.1 Terra`).
+- **JoeAuth OIDC Authentication (`https://auth.joe-univer.se`)**:
+  - Authorization Code flow with **PKCE (`S256`)**, `state`, `nonce`, and **`Ed25519` JWKS ID token signature verification** (`/.well-known/jwks.json`).
+  - Supports confidential client credentials (`JOEAUTH_CLIENT_ID` + `JOEAUTH_CLIENT_SECRET`) with graceful PKCE fallback when `JOEAUTH_CLIENT_SECRET` is omitted.
+  - Local-only ChatJoePT session cookie (`chatjoept_session`, HMAC-SHA256) so signing out of ChatJoePT does not terminate your global JoeAuth session.
 
 ---
 
-## 🏗️ Architecture & Tech Stack
+## 🏗️ Architecture
 
 ```
 chatjoept/
+├── migrations/
+│   └── 0001_init.sql          # Cloudflare D1 SQLite schema (users, dialogs, shared_links, usage_records)
 ├── app/
-│   ├── components/            # UI Components
-│   │   ├── ChatInput.tsx      # Multi-line textarea, file uploads, web search toggle
-│   │   ├── ChatMessage.tsx    # Message cards, thoughts, copy buttons, avatars
-│   │   ├── MarkdownRenderer.tsx # ReactMarkdown + RemarkMath + RehypeKatex
-│   │   ├── ModelSelector.tsx  # JPT model switcher dropdown
-│   │   ├── SettingsModal.tsx  # Usage % meters, account data management
-│   │   ├── ShareModal.tsx     # Public share link generator & copy tool
-│   │   └── Sidebar.tsx        # Conversation drawer, search, user menu
-│   ├── routes/                # React Router v8 Route Modules
-│   │   ├── home.tsx           # Primary chat application interface
-│   │   ├── login.tsx          # Email OTP authentication page
-│   │   ├── share.$shareId.tsx # Public shared conversation view
-│   │   ├── api.auth.*.ts      # OTP dispatch and verification endpoints
-│   │   ├── api.chat.ts        # SSE streaming LLM proxy & 24h quota enforcement
-│   │   ├── api.dialogs.ts     # Dialog CRUD & storage quota tracking
-│   │   └── api.dialogs.share.ts # Public share management
+│   ├── components/
+│   │   ├── AuthGate.tsx       # JoeAuth sign-in screen & auth_error display
+│   │   ├── ChatInput.tsx      # Input dock, attachments, web search toggle, soft-limit guard
+│   │   ├── ChatMessage.tsx    # Markdown/KaTeX cards, reasoning toggle, tool badges
+│   │   ├── MarkdownRenderer.tsx
+│   │   ├── ModelSelector.tsx  # JPT-6.1 Sol / JPT-6.1 Terra
+│   │   ├── SettingsModal.tsx  # General, Account & Memory stacked bar, Shared Links manager, About
+│   │   ├── ShareModal.tsx     # Immutable snapshot link creator
+│   │   └── Sidebar.tsx        # Conversation list, search, JoeAuth avatar/name, soft-limit guard
+│   ├── routes/
+│   │   ├── home.tsx           # Primary chat interface & SSE stream consumer
+│   │   ├── auth.login.ts      # JoeAuth PKCE S256 redirect generator
+│   │   ├── auth.callback.ts   # Token exchange, JWKS Ed25519 verification, user upsert
+│   │   ├── api.auth.logout.ts # Local ChatJoePT cookie clear
+│   │   ├── api.chat.ts        # Multi-round tool loop + SSE streaming + hard-limit byte guard
+│   │   ├── api.dialogs.ts     # Dialog CRUD + soft/hard limit enforcement
+│   │   ├── api.dialogs.share.ts # Immutable snapshot share CRUD
+│   │   ├── api.user.quotas.ts # Aggregated percentage quotas
+│   │   └── share.$shareId.tsx # Public unauthenticated frozen snapshot viewer
 │   ├── utils/
-│   │   ├── auth.server.ts     # HMAC token signing, domain validation, Resend OTP
-│   │   └── kv.ts              # Cloudflare KV client, 24h usage, session sync
-│   ├── app.css                # Tailwind CSS v4 + KaTeX stylesheets
-│   └── root.tsx               # Root document layout & error boundaries
+│   │   ├── auth.server.ts     # JoeAuth OIDC + PKCE + Ed25519 JWKS + HMAC session cookies
+│   │   ├── db.server.ts       # D1 queries, credit math, hard-limit truncation, share snapshots
+│   │   ├── joeglish.ts        # Refined Joeglish system prompt
+│   │   └── tools.server.ts    # DeepSeek Search/Fetch & N0TD3R3K/Joelib lookup tools
+│   └── types/chat.ts
 ├── workers/
-│   └── app.ts                 # Cloudflare Worker request handler entrypoint
-├── wrangler.jsonc             # Cloudflare Worker & KV namespace configuration
-└── package.json
+│   └── app.ts                 # Cloudflare Worker entrypoint
+└── wrangler.jsonc             # D1 binding (CHATJOEPT_DB) & runtime variables
 ```
 
 ---
 
-## ⚙️ Environment Variables & Bindings
+## ⚙️ Environment Variables & Cloudflare Bindings
 
-### 1. Cloudflare KV Binding
-Configured in `wrangler.jsonc`:
+### 1. Cloudflare D1 Binding (`wrangler.jsonc`)
 ```jsonc
-"kv_namespaces": [
+"d1_databases": [
   {
-    "binding": "CHATJOEPT_KV",
-    "id": "d87c99907ebc4fc0b58e538e62fd6c1d"
+    "binding": "CHATJOEPT_DB",
+    "database_name": "chatjoept-db",
+    "database_id": "1ca84d39-9bb3-4c78-98c2-e7e506310955",
+    "migrations_dir": "migrations"
   }
 ]
 ```
 
-### 2. Environment Variables & Secrets
+### 2. Runtime Variables (`wrangler.jsonc` / Secrets)
 
 | Variable | Type | Description |
 |---|---|---|
-| `ALLOWED_EMAIL_DOMAINS` | Var | Comma-separated domains allowed to log in (e.g. `united-taylors.org,sstx.org,hamdenhall.org`) |
-| `RESEND_FROM_EMAIL` | Var | Sender address for OTP emails (e.g. `ChatJoePT <chatjoept-noreply@united-taylors.org>`) |
-| `LLM_API_URL` | Var | Base URL of upstream LLM API (e.g. `https://api.deepseek.com`) |
-| `LLM_BASE_MODEL` | Var | Default model identifier (e.g. `deepseek-chat`) |
-| `LLM_API_KEY` | Secret | API key for upstream LLM provider |
-| `RESEND_API_KEY` | Secret | API key for Resend email dispatch |
-| `SESSION_SECRET` | Secret | Cryptographic salt for HMAC session token signing |
+| `JOEAUTH_ISSUER` | Var | JoeAuth issuer URL (`https://auth.joe-univer.se`) |
+| `LLM_API_URL` | Var | DeepSeek base URL (`https://api.deepseek.com`) |
+| `LLM_BASE_MODEL` | Var | Upstream base model (`deepseek-chat`) |
+| `JOEAUTH_CLIENT_ID` | Var / Secret | OAuth client ID registered in JoeAuth |
+| `JOEAUTH_CLIENT_SECRET` | Secret | Confidential client secret from JoeAuth |
+| `LLM_API_KEY` | Secret | DeepSeek API key (used for completions + `/v1/tools/search` & `/v1/tools/fetch`) |
+| `SESSION_SECRET` | Secret | Cryptographic secret for signing `chatjoept_session` and OAuth PKCE cookies |
 
-Secrets can be set in Cloudflare via the dashboard or using Wrangler:
+#### Registering ChatJoePT in JoeAuth
+When registering the OAuth application in [JoeAuth](https://auth.joe-univer.se):
+- **Redirect URIs**:
+  - `https://chat.joe-univer.se/auth/callback`
+  - `https://chatjoept.waynexu2020.workers.dev/auth/callback` (optional during staging)
+  - `http://127.0.0.1:8787/auth/callback` (for local development)
+- **Scopes**: `openid profile email`
+
+Configure Cloudflare secrets with Wrangler:
 ```bash
+npx wrangler secret put JOEAUTH_CLIENT_ID
+npx wrangler secret put JOEAUTH_CLIENT_SECRET
 npx wrangler secret put LLM_API_KEY
-npx wrangler secret put RESEND_API_KEY
 npx wrangler secret put SESSION_SECRET
 ```
 
-For local development, define them in `.dev.vars`:
-```ini
-LLM_API_KEY="your-api-key"
-RESEND_API_KEY="re_your_resend_key"
-SESSION_SECRET="your-local-dev-secret"
-```
+For local development, place these keys in `.dev.vars` (git-ignored).
 
 ---
 
@@ -134,20 +131,24 @@ SESSION_SECRET="your-local-dev-secret"
 npm install
 ```
 
-### 2. Run Local Development Server
+### 2. Apply D1 Migrations
 ```bash
-npm run dev
-```
-Accessible at `http://127.0.0.1:8787` (or preview at `http://localhost:5173`).
+# Local D1 SQLite database
+npx wrangler d1 migrations apply chatjoept-db --local
 
-### 3. Type Checking & Verification
+# Remote Cloudflare D1 database
+npx wrangler d1 migrations apply chatjoept-db --remote
+```
+
+### 3. Type Checking & Build
 ```bash
 npm run typecheck
+npm run build
 ```
 
-### 4. Build for Production
+### 4. Local Development with D1
 ```bash
-npm run build
+npm run dev:wrangler
 ```
 
 ### 5. Deploy to Cloudflare Workers
@@ -157,19 +158,6 @@ npm run deploy
 
 ---
 
-## 🧪 Testing & Verification Scripts
-
-Standalone test scripts are maintained in `scratch/`:
-- **`scratch/verify_sharing.mjs`**: End-to-end verification of multi-round chat creation, public share generation, DOM message presence, automatic multi-round sync, and CSS scroll verification.
-
-Run verification:
-```bash
-node scratch/verify_sharing.mjs
-```
-
----
-
 ## 📜 License & Attribution
 
-Part of the **[Joelib](https://github.com/Histar4522/Joelib)** project.  
-Created for the **United Taylors Joe Universe**.
+Part of the **[Joelib](https://github.com/N0TD3R3K/Joelib)** project.

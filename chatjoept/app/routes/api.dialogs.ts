@@ -1,48 +1,43 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { parseSessionCookie, verifySessionToken, getEnv } from "~/utils/auth.server";
+import { getAuthenticatedUser, getEnv } from "~/utils/auth.server";
 import {
+  ensureUserExists,
   getAllUserDialogs,
-  getUserDialog,
   saveUserDialog,
   deleteUserDialog,
+  deleteAllVisibleChats,
   deleteAllUserData,
   getUserQuotas,
-} from "~/utils/kv";
+} from "~/utils/db.server";
 import type { ChatSession } from "~/types/chat";
 
-// GET /api/dialogs -> list all dialogs & quotas
+// GET /api/dialogs -> list all visible dialogs & quotas
 export async function loader({ request }: LoaderFunctionArgs) {
   const env = getEnv();
-  const secret = env.SESSION_SECRET || "chatjoept-default-secret-salt-2026";
-  const cookieHeader = request.headers.get("Cookie");
-  const sessionToken = parseSessionCookie(cookieHeader);
-  const session = await verifySessionToken(sessionToken, secret);
-  const email = session?.email || null;
-
-  if (!email) {
+  const session = await getAuthenticatedUser(request, env);
+  if (!session) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  await ensureUserExists(session, env);
+
   const [dialogs, quotas] = await Promise.all([
-    getAllUserDialogs(email, env),
-    getUserQuotas(email, env),
+    getAllUserDialogs(session.sub, env),
+    getUserQuotas(session.sub, env),
   ]);
 
   return Response.json({ dialogs, quotas });
 }
 
-// POST /api/dialogs (save dialog) or DELETE /api/dialogs (delete dialog)
+// POST /api/dialogs (save dialog) or DELETE /api/dialogs (delete dialog(s))
 export async function action({ request }: ActionFunctionArgs) {
   const env = getEnv();
-  const secret = env.SESSION_SECRET || "chatjoept-default-secret-salt-2026";
-  const cookieHeader = request.headers.get("Cookie");
-  const sessionToken = parseSessionCookie(cookieHeader);
-  const session = await verifySessionToken(sessionToken, secret);
-  const email = session?.email || null;
-
-  if (!email) {
+  const session = await getAuthenticatedUser(request, env);
+  if (!session) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  await ensureUserExists(session, env);
 
   if (request.method === "POST") {
     let body: any;
@@ -57,23 +52,41 @@ export async function action({ request }: ActionFunctionArgs) {
       return Response.json({ error: "Missing dialog payload" }, { status: 400 });
     }
 
-    const saveResult = await saveUserDialog(email, dialog, env);
+    const allowPastSoftLimit = Boolean(body?.isCompletion);
+    const saveResult = await saveUserDialog(session.sub, dialog, env, {
+      allowPastSoftLimit,
+    });
+
+    const quotas = await getUserQuotas(session.sub, env);
+
     if (!saveResult.success) {
-      return Response.json({ error: saveResult.error }, { status: 400 });
+      return Response.json(
+        { error: saveResult.error, quotas },
+        { status: 400 }
+      );
     }
 
-    const quotas = await getUserQuotas(email, env);
-    return Response.json({ success: true, quotas });
+    return Response.json({
+      success: true,
+      truncated: Boolean(saveResult.truncated),
+      dialog: saveResult.savedDialog,
+      quotas,
+    });
   }
 
   if (request.method === "DELETE") {
     const url = new URL(request.url);
     const dialogId = url.searchParams.get("id");
     const deleteAll = url.searchParams.get("all") === "true";
+    const includeShares = url.searchParams.get("includeShares") === "true";
 
     if (deleteAll) {
-      await deleteAllUserData(email, env);
-      const quotas = await getUserQuotas(email, env);
+      if (includeShares) {
+        await deleteAllUserData(session.sub, env);
+      } else {
+        await deleteAllVisibleChats(session.sub, env);
+      }
+      const quotas = await getUserQuotas(session.sub, env);
       return Response.json({ success: true, quotas });
     }
 
@@ -81,8 +94,8 @@ export async function action({ request }: ActionFunctionArgs) {
       return Response.json({ error: "Missing dialog id" }, { status: 400 });
     }
 
-    await deleteUserDialog(email, dialogId, env);
-    const quotas = await getUserQuotas(email, env);
+    await deleteUserDialog(session.sub, dialogId, env);
+    const quotas = await getUserQuotas(session.sub, env);
     return Response.json({ success: true, quotas });
   }
 
